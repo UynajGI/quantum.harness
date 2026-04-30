@@ -26,12 +26,14 @@ When defaults are clear from the user's prompt, the agent acts immediately and r
 
 | Situation | Pattern |
 |---|---|
-| Clear defaults | Act → report → "Want to also [alternative]?" |
+| Clear defaults | Act → report with embedded reasoning (method + why + verification, ≤3 lines) → next-steps via `AskUserQuestion` |
 | Real branch (genuinely ambiguous) | `AskUserQuestion` with 2–3 options → act → report |
 | Frontier "is it X?" | Act on literature summary → report → "Want me to also run [compute]?" |
 | Off-scope | Act on closest in-scope thing → report → "For the off-scope part: [options]" |
 
 "Just do it" from the user means the agent asked one question too many. The goal is zero questions for clear problems.
+
+The steering wheel lives in the report and the next-steps, not in pre-approval. The report always embeds one-line reasoning: what method was chosen and why, what was verified and how. Over many sessions, users absorb this reasoning and develop judgment — without ever being asked to make the call themselves. Next-steps are always offered as `AskUserQuestion` options so users steer what happens next, not what happens now.
 
 Never march through a checklist of questions. If the user's prompt is too vague to infer anything (rare), present 2–3 starting points via `AskUserQuestion`.
 

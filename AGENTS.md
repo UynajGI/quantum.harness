@@ -84,7 +84,7 @@ Current cards:
 - `limits.md` — exact reductions and known limits (U=0, U→∞ → t-J, XXZ Δ=1, …).
 - `benchmark-numbers.md` — reference E/N, gaps, order parameters with citations.
 - `symmetry-cheatsheet.md` — conserved quantities, lattice point groups.
-- `methods/{ed,dmrg,tebd,vmc-nqs,anderson-impurity-ed,spectral}.md` — per-method notation, code shape, knobs, pitfalls. `vmc-nqs.md` uses Python/NetKet. `spectral.md` is a stub (pointers only, no tested recipe).
+- `methods/{ed,dmrg,tebd,vmc-nqs,anderson-impurity-ed,spectral,finite-t}.md` — per-method notation, code shape, knobs, pitfalls. `vmc-nqs.md` uses Python/NetKet. `spectral.md` and `finite-t.md` are stubs (pointers only, no tested recipe).
 - `2302.04919-variational-benchmarks.md` — V-score paper notes.
 
 Skills cite these cards; they never hardcode the data. New cards land when a real skill begins citing them.

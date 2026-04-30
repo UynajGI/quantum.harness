@@ -7,20 +7,16 @@ The harness is **agent-led, user-ratified**: you bring a concrete problem, the a
 ## Quick Start
 
 ```bash
-# Bootstrap (Ion + skills only)
-make setup
+# Full setup: Ion + skills + domain stack (Julia + ITensors)
+make setup && make domain-setup
 
-# Default stack: Julia + ITensors.jl ecosystem
-make install julia
-make install itensors
+# Optional: NetKet for VMC / neural quantum states
+make install netket
 
-# Optional: Python alternative for tensor-network sketches
+# Optional: quimb (Python TN alternative)
 make install quimb
 
-# Optional: Quarto for HTML rendering
-make install quarto
-
-# See all targets and installable tools
+# See all targets
 make help
 ```
 

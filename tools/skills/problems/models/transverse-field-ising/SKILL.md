@@ -41,7 +41,8 @@ Build per `knowledge-base/conventions.md`: `H = -J Σ σ^z_i σ^z_j - Γ Σ σ^x
 |---|---|
 | Question is about quantum critical behavior at `Γ ≈ J` (1D) or the equivalent transition | Run the calculation here, then call `criticality`. |
 | Long-range Ising (e.g., `1/r^α`) | Stay here; flag that bond dimension grows; document. |
-| User asks about real-time dynamics or finite-T | Out of current scope; offer to set up the ground-state computation that's needed first. |
+| User asks about dynamics | Route to `knowledge-base/methods/spectral.md` (stub). |
+| User asks about finite-T | Route to `knowledge-base/methods/finite-t.md` (stub). |
 
 ## Verification
 

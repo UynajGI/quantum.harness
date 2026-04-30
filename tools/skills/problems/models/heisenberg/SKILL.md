@@ -45,7 +45,8 @@ Only surface a real choice when the prompt is genuinely ambiguous about the latt
 | User asks about NN + NNN couplings | Switch to `j1-j2`. |
 | Question is about quantum critical behavior (e.g., XXZ at Δ=1, dimerization) | Call `criticality` after the calculation. |
 | User wants doped, fermionic correlated physics | Switch to `t-j` or `hubbard`. |
-| User asks about `S(q,ω)`, dynamics, or finite-T | Route to `knowledge-base/methods/spectral.md` (stub) for spectral; finite-T out of scope — offer ground state first. |
+| User asks about `S(q,ω)` or dynamics | Route to `knowledge-base/methods/spectral.md` (stub). |
+| User asks about finite-T (susceptibility, specific heat) | Route to `knowledge-base/methods/finite-t.md` (stub). |
 
 ## Verification
 

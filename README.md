@@ -1,26 +1,14 @@
 # Quantum Many-Body Physics Harness
 
-Research assistant for quantum many-body physics.
+Research assistant for quantum many-body physics. Handles ground-state calculations on lattice models — from setting up the Hamiltonian to picking a method, running the computation, verifying results, and generating plots.
 
-```
-> Ground state of 1D Heisenberg, N=20
+## What it helps with
 
-E/N = -0.4341 via DMRG. Converged, cross-checked with ED ✓.
-```
-
-```
-> Is kagome Heisenberg a spin liquid?
-
-Strong candidate. No magnetic order (consensus). Gapped Z₂ vs
-gapless U(1) debated. Yan-Huse-White 2011, Depenbrock 2012.
-```
-
-```
-> Hubbard square lattice, U/t=8, half-filled
-
-E/N = -0.5234 via DMRG. Double occupancy ⟨n↑n↓⟩ = 0.038.
-Mott regime — charge gap open, strong AFM correlations.
-```
+- **Ground-state problems** across 8 model families: Heisenberg, transverse-field Ising, J1-J2, Hubbard, t-J, t-V, Anderson impurity, multiorbital Hubbard.
+- **Method selection** — DMRG, ED, TEBD, or VMC/NQS (NetKet), chosen based on the problem's lattice, size, and difficulty.
+- **Verification** — checks results against known limits, symmetry constraints, convergence, and published benchmarks where available.
+- **Contested problems** — for frontier cases like kagome Heisenberg or J1-J2 at intermediate coupling, provides literature context and flags what's settled vs debated.
+- **Diagnostic physics questions** — criticality, frustration, spin liquids, Mott transitions, Kondo effect.
 
 ## Setup
 
@@ -30,16 +18,13 @@ make setup && make domain-setup
 
 Start a Claude Code session and describe your problem.
 
-## Coverage
+## Stack
 
-**Models** — Heisenberg, transverse-field Ising, J1-J2, Hubbard, t-J, t-V, Anderson impurity, multiorbital Hubbard.
+- **Julia** — ITensors.jl, ITensorMPS.jl, KrylovKit.jl, MPSKit.jl, Plots.jl
+- **Python** — NetKet + JAX (VMC/NQS), quimb (optional TN alternative)
 
-**Methods** — DMRG, ED, TEBD, VMC/NQS (NetKet).
-
-**Physics** — criticality, frustration, spin liquids, Mott transitions, Kondo effect.
-
-Ground-state lattice problems, entry to medium level. Contested cases flagged with literature context.
+Install additional tools with `make install <name>`. Run `make help` for the full list.
 
 ## For contributors
 
-`AGENTS.md` · `docs/`
+Design contract: `AGENTS.md`. Specs and test reports: `docs/`.

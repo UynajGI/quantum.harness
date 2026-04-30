@@ -13,8 +13,14 @@ setup: ## Minimal bootstrap — Ion + skills only
 	@command -v ion >/dev/null 2>&1 || { echo "Ion not found. Install: curl -fsSL https://raw.githubusercontent.com/Roger-luo/Ion/main/install.sh | sh"; exit 1; }
 	ion add
 	@echo ""
-	@echo "Base setup complete. Install tools as you need them:"
-	@echo "  make install <tool>   (see 'make help' for the list)"
+	@echo "Base setup complete. Run 'make domain-setup' to install the domain stack."
+
+DOMAIN_TOOLS := julia itensors
+
+domain-setup: ## Install the full domain stack (Julia + ITensors ecosystem)
+	@for tool in $(DOMAIN_TOOLS); do $(MAKE) install-$$tool; done
+	@echo ""
+	@echo "Domain stack ready."
 
 install: ## Install a specific tool on demand. Usage: make install <tool>
 	@tool="$(filter-out install,$(MAKECMDGOALS))"; \

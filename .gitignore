@@ -1,1 +1,6 @@
 raw/
+
+# Managed by ion
+tools/skills/ion-cli
+.claude/skills/
+CLAUDE.md

@@ -1,6 +1,6 @@
 .PHONY: setup test clean help install $(addprefix install-,$(INSTALLABLE))
 
-INSTALLABLE := quarto
+INSTALLABLE := quarto quimb
 
 help: ## Show available targets and installable tools
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -33,6 +33,12 @@ $(INSTALLABLE):
 install-quarto: ## Install Quarto + TinyTeX for content rendering
 	@command -v quarto >/dev/null && echo "Quarto already installed" || { echo "Install Quarto: https://quarto.org/docs/get-started/"; exit 1; }
 	@quarto install tinytex --no-prompt 2>/dev/null || true
+
+install-quimb: ## Install quimb + common numerical dependencies into .venv
+	@command -v uv >/dev/null 2>&1 || { echo "uv not found. Install uv first: https://docs.astral.sh/uv/getting-started/installation/"; exit 1; }
+	@uv venv .venv
+	@uv pip install quimb cotengra autoray opt_einsum numpy scipy matplotlib jupyter ipykernel
+	@echo "quimb environment ready in .venv"
 
 render: ## Render a markdown file to HTML. Usage: make render FILE=<path.md>
 	@if [ -z "$(FILE)" ]; then echo "Usage: make render FILE=<path.md>"; exit 1; fi

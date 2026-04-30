@@ -2,25 +2,64 @@
 
 Research harness for quantum many-body physics using tensor network methods. Covers theoretical foundations (second quantization, Green's functions, Fermi liquid theory, path integrals) and computational approaches (MPS, PEPS, DMRG, TEBD, MERA, TN contractions).
 
+## Core Harness Philosophy
+
+This repo is a harness for problem-solving agents, not a teaching system.
+
+The previous tutorial, roadmap, and negative-feedback design is intentionally discarded. Do not preserve old routines, knowledge-base workflows, or skill structures for compatibility if they make the user work like a highly motivated student. Users come to agents to solve problems. Any learning should happen as a side effect of watching good judgment, not as the main product.
+
+Agents should behave like capable juniors solving concrete quantum many-body problems under light human steering. The user should not need to know the roadmap, choose every subroutine, or stay motivated through repeated correction. The harness should diagnose the situation, recommend a path, carry out the work, check results, and surface only the decisions that genuinely matter.
+
+### Strategic Steering Principle
+
+Use the Superpowers brainstorming pattern as the strategic model: when a task has meaningful branches, understand the context, then present 2-3 real options with concise tradeoffs. Lead with the recommended option and explain why.
+
+This is a strategic design pattern, not user-facing language. Do not mention "fake steering wheel", psychological steering, or autonomous-driving metaphors to users. Locally, the interaction should simply look like competent technical judgment.
+
+Every option offered must be real and executable. The first option may be recommended, but the other options must not be fake, punitive, or low-effort. If the user chooses a non-recommended path, follow it faithfully unless there is a concrete technical blocker. If blocked, explain the blocker and offer the closest viable alternatives.
+
+The goal is agent-led, user-ratified work: the agent drives the workflow; the user controls goal, assumptions, depth, method preference, risk tolerance, and final interpretation.
+
+## Problem-Driven Skill Design
+
+Skills must be organized around problems, not lessons, methods, tools, metrics, or roadmaps.
+
+Use this canonical split:
+
+```text
+tools/skills/problems/
+  models/
+  physics/
+```
+
+`models/` contains canonical Hamiltonian or Hilbert-space problem families.
+`physics/` contains cross-model organizing questions: phases, mechanisms, dynamics, solvability, and diagnostics.
+
+Ion may expose direct `tools/skills/<name>` symlink aliases for installation. Edit the nested `tools/skills/problems/...` source directories, not the aliases.
+
+Methods such as DMRG, DMFT, QMC, VMC, fuzzy sphere, and V-score belong inside problem workflows, not in problem names. Do not create a separate visible method-skill taxonomy by default. If a problem skill mentions a method, it should include enough method, software, setup, output, and validation guidance for an agent with no chat history to act sensibly.
+
+Dimension, lattice, filling, doping, boundary condition, disorder strength, and coupling regime are runtime choices unless they define a truly distinct canonical problem.
+
+## Knowledge Base Role
+
+`knowledge-base/` is allowed, but it is factual reference storage only. It may contain paper notes, definitions, equations, benchmark facts, and citation material. It must not become a user-facing route, curriculum, task catalog, prerequisite reading path, or method execution manual.
+
+Actionable method procedures belong in problem skills or tools. When composing skills, follow the broader Superpowers design style: clear trigger conditions, progressive disclosure, explicit workflows, real user checkpoints, and verification before completion. Keep the visible surface problem-driven; add more structure only when it removes real complexity.
+
 ## Tools & Languages
 
 No specific language committed yet. Candidate TN ecosystems:
 - **Julia:** ITensors.jl, TensorKit.jl + MPSKit/PEPSKit/MERAKit/TNRKit
 - **Python:** quimb + cotengra, TeNPy
 
-## Knowledge Base
-
-Rendered from raw materials in `raw/` (git-ignored).
-See `knowledge-base/_index.md` for the full index.
-See `knowledge-base/_tasks.md` for the catalog of standard tasks in this field.
-See `knowledge-base/_missing.md` for skills/tools this project needs but that don't yet exist.
-
-To add new raw materials: place files in `raw/` and re-run the rendering.
-
 ## Installed Skills
 
-- **onboard** (local) — Interview a new learner and generate a personalized learning path
-- **step** (local) — Advance through the path one step at a time with rendered HTML content
+Local problem skills:
+- **models:** transverse-field-ising, heisenberg, j1-j2, t-v, hubbard, t-j, anderson-impurity, multiorbital-hubbard
+- **physics:** criticality, frustration, spin-liquid, mott-transition, kondo-effect
+
+External/support skills:
 - **quimb-tensor-network** — quimb/QuTiP tensor network: MPS, PEPS, DMRG, TEBD
 - **arxiv-search** — Semantic arXiv search via Valyu
 - **jupyter-notebook** — Scaffold and edit .ipynb notebooks
@@ -106,7 +145,7 @@ ion self --help                          # Manage the Ion install
 ## Agent guidelines
 
 Agents working in this project should:
-1. Search `knowledge-base/` before asking questions — answers may already be documented.
+1. Treat the core harness philosophy and problem-driven skill design above as the controlling design contract.
 2. Use tools from `tools/` rather than reimplementing operations.
 3. Run `make help` to discover available workflow targets.
 4. Check `Ion.toml` (or `ion` CLI) for installed / available skills.
@@ -115,7 +154,3 @@ Agents working in this project should:
 ## Daily Workflow
 
 Run `make help` to see available Makefile targets.
-
-## Roles
-
-(Not yet configured — run `/harness-onboard` to define roles and onboarding skills.)

@@ -5,10 +5,6 @@ skills-dir = "tools/skills"
 claude = ".claude/skills"
 
 [skills]
-# Local skills every harness gets
-onboard = { type = "local" }
-step    = { type = "local" }
-
 # Tensor networks & quantum
 quimb-tensor-network = { source = "a5c-ai/babysitter/quimb-tensor-network" }
 
@@ -24,3 +20,21 @@ latex-paper-en = { source = "bahayonghang/academic-writing-skills/latex-paper-en
 
 # Language
 julia = { source = "mindrally/skills/julia" }
+ion-cli = { type = "local" }
+
+# Problem skills: models
+transverse-field-ising = "tools/skills/problems/models/transverse-field-ising"
+heisenberg = "tools/skills/problems/models/heisenberg"
+j1-j2 = "tools/skills/problems/models/j1-j2"
+t-v = "tools/skills/problems/models/t-v"
+hubbard = "tools/skills/problems/models/hubbard"
+t-j = "tools/skills/problems/models/t-j"
+anderson-impurity = "tools/skills/problems/models/anderson-impurity"
+multiorbital-hubbard = "tools/skills/problems/models/multiorbital-hubbard"
+
+# Problem skills: physics
+criticality = "tools/skills/problems/physics/criticality"
+frustration = "tools/skills/problems/physics/frustration"
+spin-liquid = "tools/skills/problems/physics/spin-liquid"
+mott-transition = "tools/skills/problems/physics/mott-transition"
+kondo-effect = "tools/skills/problems/physics/kondo-effect"

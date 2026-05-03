@@ -81,6 +81,7 @@ Current cards:
 - `benchmark-numbers.md` — reference E/N, gaps, order parameters with citations.
 - `symmetry-cheatsheet.md` — conserved quantities, lattice point groups.
 - `methods/{ed,dmrg,tebd,vmc-nqs,anderson-impurity-ed,spectral,finite-t}.md` — per-method notation, code shape, knobs, pitfalls. `vmc-nqs.md` uses Python/NetKet. `spectral.md` and `finite-t.md` are stubs (pointers only, no tested recipe).
+- `literature/<method>/` — rendered methodology references organized by method, each with its own `INDEX.md`. Raw PDFs, Semantic Scholar metadata, and extracted figures live in local-only `.raw/` / `.figures/` subfolders and must remain gitignored.
 - `2302.04919-variational-benchmarks.md` — V-score paper notes.
 
 Skills cite these cards; they never hardcode the data. New cards land when a real skill begins citing them.
@@ -160,6 +161,7 @@ External/support skills:
 - **scientific-visualization** — Publication-quality figures (matplotlib/seaborn/plotly)
 - **scientific-writing** — Scientific manuscript drafting
 - **latex-paper-en** — LaTeX academic paper writing
+- **download-ref** — Add arXiv/DOI/book methodology references under `knowledge-base/literature/<method>/`; rendered markdown is tracked, raw PDFs/metadata/figures are local-only.
 - **julia** — Julia development guidance, multiple dispatch, performance
 
 ## Tool Hierarchy
@@ -250,7 +252,8 @@ Agents working in this project should:
 2. Use tools from `tools/` rather than reimplementing operations.
 3. Run `make help` to discover available workflow targets.
 4. Check `Ion.toml` (or `ion` CLI) for installed / available skills.
-5. Treat `make setup` as **minimal bootstrap only** — install heavy domain tools on demand via `make install <tool>`. Before recommending a tool-dependent command, verify the tool is in `INSTALLABLE` (and installed); if not, instruct the user to run `make install <tool>` first.
+5. For methodology references, use `download-ref`; keep different methods in different `knowledge-base/literature/<method>/` folders and never commit `.raw/` or `.figures/`.
+6. Treat `make setup` as **minimal bootstrap only** — install heavy domain tools on demand via `make install <tool>`. Before recommending a tool-dependent command, verify the tool is in `INSTALLABLE` (and installed); if not, instruct the user to run `make install <tool>` first.
 
 ## Daily Workflow
 

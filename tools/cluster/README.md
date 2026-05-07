@@ -20,11 +20,12 @@ Each card is markdown; skills parse the headers and tables, not free-form prose.
 5. **Filesystem** — `home`, `scratch` (or absent), project paths; quotas; whether `/scratch` exists.
 6. **Network** — `internet.from_login` (yes / no — controls whether `git clone <url>` works on the login node), `internet.from_compute` (whether package install works during a job).
 7. **Region** — for downstream language skills to default mirrors (e.g., `mainland_china` → use a Chinese mirror for Julia / pip / conda). Values: `mainland_china`, `none` / blank.
-8. **Documentation** — `docs_url` (the cluster's official docs page; cluster-aware skills can re-fetch when the profile drifts).
-9. **Bootstrap one-time** — shell snippet describing cluster-specific quirks (group permissions, depot path, license server activation). Run once per fresh checkout. Idempotent.
-10. **Sbatch idioms** — single-cell and array-job templates; cluster-specific quirks (array-id env var name, output-file naming).
-11. **Status / queue commands** — `squeue` / `sacct` flavor, partition-listing command.
-12. **Notes** — anything else (group ownership, network egress, GPU exclusivity rules, etc.).
+8. **Documentation** — a **table of every relevant sub-page** of the cluster's official docs (not just one root URL): `(URL, what it documents)` rows for login, scheduler, partitions, environment / modules, filesystem, network, etc. Built once during `/onboard`'s cluster-setup stage by a subagent crawling the docs site, then maintained as the canonical local index. `/slurm` and other cluster-aware skills re-fetch from this table when the profile drifts; the table is the spec, not a fallback.
+9. **Harness-side gotchas** — issues *not* explicit in the cluster's official docs but caught by the subagent (or by usage). Examples: non-interactive ssh not sourcing `/etc/profile` so scheduler binaries are off PATH; two `sbatch` binaries on the system; login-shell-only env quirks. Each entry: symptom, cause, fix (e.g., `ssh <alias> 'bash -l -c "..."'`).
+10. **Bootstrap one-time** — shell snippet describing cluster-specific quirks (group permissions, depot path, license server activation). Run once per fresh checkout. Idempotent.
+11. **Sbatch idioms** — single-cell and array-job templates; cluster-specific quirks (array-id env var name, output-file naming).
+12. **Status / queue commands** — `squeue` / `sacct` flavor, partition-listing command.
+13. **Notes** — anything else (group ownership, network egress, GPU exclusivity rules, etc.).
 
 The schema is *additive*: new fields land as new sections; skills that don't read them ignore them. Language-specific tooling (`julia.provider`, `julia.mirror_url`, `python.distribution`, …) does **not** belong here — those are downstream concerns handled by `/setup-julia`, `/setup-python`, etc., which read this profile's `region` / `internet` / `docs_url` fields and apply their own recipes.
 

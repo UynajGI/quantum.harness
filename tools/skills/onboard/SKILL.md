@@ -47,11 +47,26 @@ Options:
 - Text field for docs URL (the user pastes; the skill `WebFetch`'s it)
 - "Walk me through the 4 questions"
 
-#### 2b. From URL — fetch + extract + ratify
+#### 2b. From URL — dispatch a subagent for a thorough crawl
 
-`WebFetch` the URL with a prompt that asks for: scheduler type, partitions table (name / class / cores / memory / max_wall / GPU), default queue, filesystem layout, internet reach, region. Propose a `tools/cluster/<short-name>.md` populated per the schema in `tools/cluster/README.md`. Show the user the proposed profile and ratify before write.
+A single `WebFetch` rarely captures everything — most cluster docs sites have a sidebar with 5-10+ sub-pages (connection / scheduler / partitions / filesystem / modules / data) that each carry one piece of the profile. Dispatch an **Agent subagent** (`model: "opus"`, `subagent_type: "general-purpose"`, max-effort framing in the prompt) to crawl the docs site comprehensively.
 
-If parsing fails twice (e.g., docs page is JS-only or the structure doesn't match), fall through to **2c** (questions).
+**Subagent brief**:
+- Input: the cluster docs root URL the user provided (e.g., `https://docs.hpc.hkust-gz.edu.cn/en/docs/hpc12/`).
+- Job:
+  1. Fetch the root page; identify the sidebar / nav menu; enumerate every sub-page relevant to: **login & connection**, **scheduler & job submission**, **partitions / queues / resource limits**, **environment setup / modules / `.bashrc`**, **filesystem layout**, **network reach** (internet from login / from compute).
+  2. Fetch each relevant sub-page; extract verbatim instructions (sbatch examples, partition tables, module load lines, ssh hostnames, etc.).
+  3. Synthesize into the cluster profile schema declared in `tools/cluster/README.md`.
+  4. **Identify harness-side gotchas not explicit in the docs**: e.g., non-interactive ssh sessions not sourcing `/etc/profile` (so scheduler binaries are off PATH); two scheduler binaries on the system (`/usr/bin/sbatch` Ubuntu default vs `/opt/slurm/bin/sbatch` cluster's own); login-shell-only quirks. These are inferred from "the docs assume X, our harness uses Y" reasoning.
+- Output:
+  - The full **sub-page URL index** for the cluster (table: URL → what it documents). This goes into the profile's "Documentation" section so the harness has complete coverage, not a single-link fallback.
+  - The proposed `tools/cluster/<short-name>.md` content matching the schema.
+  - A **"Harness-side gotchas"** section capturing inferred issues + their workarounds (e.g., "ssh with `bash -l -c '...'` to get a login shell so `/opt/slurm/bin` is on PATH").
+  - Anything the subagent could *not* extract from the docs — flagged for fallback to step **2c** (interactive questions) on those specific fields only, not the whole profile.
+
+**Show the user** the proposed profile (Superpowers brainstorming pattern: present, ratify, then write). Edits-before-write are encouraged. The user owns the final content; the subagent only proposes.
+
+If the subagent fails outright (docs site is paywalled / JS-only with no API / 403 on subpages), fall through to **2c** (questions).
 
 #### 2c. Walk-through fallback (≤4 questions, each warm)
 

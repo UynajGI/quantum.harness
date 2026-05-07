@@ -15,7 +15,10 @@
 # After all cells finish: julia --project=julia-env scripts/tfim_fig4_aggregate.jl
 
 set -euo pipefail
-module load julia/1.10.9
+# Use juliaup-installed Julia (≥ 1.11) — the committed julia-env/Manifest.toml
+# was resolved on Julia 1.12 and pins packages that need 1.11+ APIs. The HPC2
+# `module load julia/1.10.9` is too old.
+export PATH="$HOME/.juliaup/bin:$PATH"
 cd "$SLURM_SUBMIT_DIR"
 
 mkdir -p results/tfim_fig4_paper_grade/cells

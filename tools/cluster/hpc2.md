@@ -53,20 +53,30 @@ HPC2 — HKUST(GZ) institutional Slurm cluster. CPU-heavy stack with a small GPU
 
 ## Bootstrap one-time
 
-Run once per fresh user account / fresh checkout. Idempotent.
+Run once per fresh user account / fresh checkout. Idempotent. Per the Jinguo-group recipe (https://book.jinguo-group.science/stable/chap2/julia-setup/), **mirror first, then Julia**.
 
 ```bash
 # 1. Repo (skip if already cloned)
 git clone git@github.com:fliingelephant/harness-qmb.git ~/harness-qmb 2>/dev/null || true
 cd ~/harness-qmb && git fetch origin
 
-# 2. Julia (module is the harness default on HPC2; juliaup is also installed at ~/.juliaup/bin/julia)
-module load julia/1.10.9
+# 2. Mirror config (region == mainland_china → Nanjing University)
+bash tools/cli/setup-julia.sh mirror --region mainland_china
 
-# 3. Project env (Pkg.instantiate from committed Project.toml + Manifest.toml)
-julia --project=julia-env -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+# 3. Julia (juliaup; respects JULIAUP_SERVER set in step 2)
+#    Note: HPC2 already has juliaup-installed Julia 1.11.6 from prior work; the
+#    install step is a no-op there. The juliaup channel must match the version
+#    used to resolve the committed julia-env/Manifest.toml — currently 1.12.x
+#    (locally), so on HPC2 use juliaup julia ≥ 1.11 (1.11 has the StaticData
+#    symbol PrecompileTools 1.3.x needs). Avoid the `module load julia/1.10.9`
+#    path — the 1.10 module is too old for the committed Manifest.
+bash tools/cli/setup-julia.sh install --region mainland_china --version release
 
-# 4. (Optional) Mirror config for mainland China — see /setup-julia for the canonical recipe.
+# 4. Project env
+bash tools/cli/setup-julia.sh instantiate julia-env
+
+# 5. Verify
+bash tools/cli/setup-julia.sh verify julia-env ITensors
 ```
 
 `/setup-julia` reads this `bootstrap_one_time` snippet (and the `region` field above) when invoked with `--target remote:hpc2`.
@@ -85,10 +95,12 @@ julia --project=julia-env -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 #SBATCH --cpus-per-task=8
 #SBATCH --output=results/<run>/cells/<cell_id>/slurm-%j.out
 
-module load julia/1.10.9
+export PATH="$HOME/.juliaup/bin:$PATH"
 cd $SLURM_SUBMIT_DIR
 julia --project=julia-env <script>.jl
 ```
+
+Use the juliaup-installed Julia (≥ 1.11) rather than `module load julia/1.10.9` — the committed `julia-env/Manifest.toml` was resolved on a newer Julia and pins packages (PrecompileTools 1.3.x) that need `StaticData` (Julia 1.11+).
 
 `--cpus-per-task=8` lets ITensors's OpenBLAS use 8 threads for DMRG and MPS contractions. Drop to 1 for pure-Markov-chain workloads that don't benefit from BLAS threading.
 
@@ -105,7 +117,7 @@ julia --project=julia-env <script>.jl
 #SBATCH --cpus-per-task=8
 #SBATCH --output=results/<run>/cells/cell-%a/slurm-%A_%a.out
 
-module load julia/1.10.9
+export PATH="$HOME/.juliaup/bin:$PATH"
 cd $SLURM_SUBMIT_DIR
 
 CELL_ID=$(printf "%03d" $SLURM_ARRAY_TASK_ID)

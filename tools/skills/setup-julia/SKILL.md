@@ -20,26 +20,29 @@ This skill is for *Julia-specific configuration*. Cluster-side conventions (ssh,
 ## Inputs
 
 - `--target {local | remote:<alias>}` — where to install/configure. Default: `local`. For remote, `<alias>` matches `tools/cluster/<active>.md`'s `ssh.alias` field; the skill reads `repo_path_remote` for where the project lives.
-- `--mirror <url>` (optional) — package server URL. If unset, defaults from `region`:
-  - `region: mainland_china` → `https://mirrors.tuna.tsinghua.edu.cn/julia` (Tsinghua mirror; Jinguo-group recommended).
-  - Other / unset → Julia's default (`https://pkg.julialang.org`).
-  - `--mirror none` to skip mirror config entirely.
-- `--version <X.Y.Z>` (optional) — Julia version. Default: `release` (juliaup's stable channel). For HPC2 module, this is overridden by the `module load julia/<version>` declaration in the cluster's `bootstrap_one_time` snippet.
-- `--instantiate / --no-instantiate` — whether to run `Pkg.instantiate()` after install. Default `--instantiate` (we want the env ready for actual work).
+- `--region <name>` (optional) — mirror selection. Defaults from cluster profile's `region` field. Recognized:
+  - `mainland_china` → Nanjing University (per Jinguo guide):
+    - `JULIAUP_SERVER = https://mirror.nju.edu.cn/julia-releases/`
+    - `JULIA_PKG_SERVER = https://mirrors.nju.edu.cn/julia`
+  - other / unset → Julia defaults (no mirror config).
+- `--mirror <url>` (optional, advanced) — override `JULIA_PKG_SERVER` directly with a custom URL.
+- `--version <X.Y.Z>` (optional) — Julia version. Default: `release` (juliaup's stable channel).
+- `--instantiate / --no-instantiate` — whether to run `Pkg.instantiate()` after install. Default `--instantiate`.
 
 ## Workflow
 
-1. **Probe target**: detect if `julia` is reachable (PATH, `module load`, or `~/.juliaup/bin/julia`). For remote: `ssh <alias> 'command -v julia || command -v juliaup'`.
-2. **Install Julia (if missing)**:
-   - Local: invoke `tools/cli/setup-julia.sh install [--version X.Y.Z]` — runs juliaup (curl-installer if juliaup itself is missing), adds the requested channel, sets default.
-   - Remote: same script, dispatched via `ssh <alias>`. If the cluster profile's `bootstrap_one_time` declares a module-loaded Julia (`module load julia/X.Y.Z`), prefer that over juliaup — module-provided Julia is usually what cluster admins expect users to use.
-3. **Configure mirror** (per `--mirror` resolution above): write/update `~/.julia/config/startup.jl` with:
-   ```julia
-   ENV["JULIA_PKG_SERVER"] = "<mirror_url>"
-   ```
-   Idempotent: replace any existing `JULIA_PKG_SERVER` line, leave the rest of `startup.jl` alone.
-4. **Instantiate project env**: in the harness checkout, run `julia --project=julia-env -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'`. For remote, ssh-execute in `<repo_path_remote>`.
-5. **Verify**: run a tiny smoke (`julia --project=julia-env -e 'using ITensors; println("ok")'`); surface failure.
+This skill follows the Jinguo-group recipe verbatim (https://book.jinguo-group.science/stable/chap2/julia-setup/). **Mirror first, then install** — juliaup itself respects `JULIAUP_SERVER` if exported before the curl installer runs.
+
+1. **Probe target**: detect if `julia` is reachable (PATH, `module load`, or `~/.juliaup/bin/julia`). For remote: `ssh <alias> 'command -v julia || command -v juliaup'`. Also read the manifest's `julia_version` to verify version compatibility against any pre-existing Julia.
+2. **Step 2 of guide — configure mirror first** (only if `--region` resolves to a mirror): `tools/cli/setup-julia.sh mirror --region <name>`. This writes BOTH `JULIAUP_SERVER` and `JULIA_PKG_SERVER` env vars to the user's shell rc (`~/.bashrc` / `~/.zshrc` / `~/.profile`) AND `JULIA_PKG_SERVER` to `~/.julia/config/startup.jl` for julia subprocesses. Idempotent — replaces any prior values.
+3. **Step 1 of guide — install Julia (if missing)**: `tools/cli/setup-julia.sh install [--region <name>] [--version X.Y.Z]`. The script:
+   - exports `JULIAUP_SERVER` for the current shell (so the curl installer downloads through the mirror);
+   - runs `curl -fsSL https://install.julialang.org | sh` to install juliaup;
+   - writes the guide's Revise try/catch snippet to `~/.julia/config/startup.jl`;
+   - `Pkg.add("Revise")` into the default env.
+   Skip step 3 if Julia is already present and the version is compatible.
+4. **Instantiate project env**: in the harness checkout, run `tools/cli/setup-julia.sh instantiate <project_dir>` → `Pkg.instantiate(); Pkg.precompile()`. For remote, ssh-execute in `<repo_path_remote>`.
+5. **Verify**: `tools/cli/setup-julia.sh verify <project_dir> <package_name>` — exit 0 on success.
 6. **Hand back**: 2-3 line summary (Julia version, mirror url, project env state).
 
 ## Output
@@ -55,15 +58,18 @@ This skill is for *Julia-specific configuration*. Cluster-side conventions (ssh,
 - Called by `make install julia` and `make install itensors` recipes (the makefile recipes can dispatch the skill via `${CLAUDE_SKILL_DIR}/setup-julia/...` once registered).
 - Pairs with `tools/cluster/<active>.md` for the `region` default mirror and (for remote) the ssh alias.
 
-## Mirror-config note (mainland China)
+## Mirror-config note (mainland China — Jinguo-group recipe)
 
-For users in mainland China, package downloads from `pkg.julialang.org` are typically slow or unreliable. The Jinguo-group setup guide (https://scfp.jinguo-group.science/chap1-julia/julia-setup.html) recommends the Tsinghua mirror:
+For users in mainland China, package downloads from `pkg.julialang.org` are typically slow or unreliable. The Jinguo-group setup guide (https://book.jinguo-group.science/stable/chap2/julia-setup/) configures **two mirror env vars**, both pointing at Nanjing University:
 
+```bash
+export JULIAUP_SERVER=https://mirror.nju.edu.cn/julia-releases/    # for the juliaup binary download
+export JULIA_PKG_SERVER=https://mirrors.nju.edu.cn/julia           # for Pkg downloads
 ```
-ENV["JULIA_PKG_SERVER"] = "https://mirrors.tuna.tsinghua.edu.cn/julia"
-```
 
-This skill applies that automatically when the cluster profile's `region` field is `mainland_china`. For other regions or institutional mirrors, pass `--mirror <url>` explicitly.
+`JULIAUP_SERVER` matters for the *initial Julia install* — without it, juliaup downloads from AWS S3 (slow from mainland China). `JULIA_PKG_SERVER` matters for every subsequent `Pkg.add` / `Pkg.instantiate`. The mirror MUST be set before invoking the curl installer; this skill orders Step 2 before Step 1 when `--region mainland_china`.
+
+This skill applies the NJU mirror automatically when the cluster profile's `region` field is `mainland_china`. For other regions, no mirror is set. For an institutional mirror, pass `--mirror <url>` to override `JULIA_PKG_SERVER`.
 
 ## Notes
 

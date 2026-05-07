@@ -72,7 +72,9 @@ bash tools/cli/setup-julia.sh mirror --region mainland_china
 #    path — the 1.10 module is too old for the committed Manifest.
 bash tools/cli/setup-julia.sh install --region mainland_china --version release
 
-# 4. Project env
+# 4. Project env (Pkg.resolve generates a fresh Manifest from Project.toml,
+#    then Pkg.instantiate materializes it; Manifest is gitignored so each
+#    machine resolves its own).
 bash tools/cli/setup-julia.sh instantiate julia-env
 
 # 5. Verify

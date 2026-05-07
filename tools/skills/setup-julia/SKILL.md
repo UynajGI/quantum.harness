@@ -73,9 +73,8 @@ This skill applies the NJU mirror automatically when the cluster profile's `regi
 
 ## Notes
 
-- The skill does NOT manage `Manifest.toml` content — that's per-project. It only runs `Pkg.instantiate()` to materialize whatever the project's `Project.toml` + `Manifest.toml` declare.
-- For the harness specifically, `julia-env/Project.toml` and `julia-env/Manifest.toml` are committed (see repo `.gitignore`); `Pkg.instantiate()` reproduces the locked environment exactly.
-- Module-loaded Julia (e.g., `module load julia/1.10.9` on HPC2) is preferred on shared clusters — admins usually optimize the module for the cluster's filesystem and BLAS. juliaup-installed Julia is the fallback when no module is provided.
+- **Project.toml only** is the harness rule. `julia-env/Project.toml` is committed (the dependency contract); `julia-env/Manifest.toml` is gitignored and re-generated per machine on first `Pkg.resolve()` + `Pkg.instantiate()`. Manifests are pinned to a specific `julia_version` and don't port across Julia major versions, so committing one would break cross-machine setup. Trade-off: exact dependency-version reproducibility is sacrificed for cross-platform/version portability — acceptable for a research harness running across laptop + cluster + colleagues' machines.
+- Module-loaded Julia (e.g., `module load julia/1.10.9`) and juliaup-installed Julia are both fine. Pick whichever the cluster admin prefers; the skill probes both. For Manifest-portability across the local + cluster setup, prefer juliaup so the Julia version is user-controlled (rather than admin-chosen) — easier to keep aligned.
 - This skill does NOT do cluster-level setup (ssh keys, scheduler config, account setup). That's `/onboard`'s cluster-setup stage and the cluster profile's `bootstrap_one_time`.
 
 ## Anti-patterns (auto-reject)

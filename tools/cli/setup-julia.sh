@@ -214,8 +214,11 @@ case "$cmd" in
       echo "Julia not found — run '$0 install --region <region>' first" >&2
       exit 1
     fi
-    echo "Instantiating $project_dir using $julia_bin..."
-    "$julia_bin" --project="$project_dir" -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+    echo "Resolving + instantiating $project_dir using $julia_bin..."
+    # Manifest.toml is gitignored (platform/version-specific). Pkg.resolve()
+    # generates a fresh Manifest from Project.toml against this Julia's
+    # registry, then Pkg.instantiate() materializes it.
+    "$julia_bin" --project="$project_dir" -e 'using Pkg; Pkg.resolve(); Pkg.instantiate(); Pkg.precompile()'
     ;;
 
   verify)

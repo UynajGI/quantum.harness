@@ -1,10 +1,12 @@
 raw/
 .zulip/
 .DS_Store
-# Lock files (Project.toml, Manifest.toml) ARE committed for reproducibility;
-# only the package depot / compile cache stays local.
+# Only Project.toml is committed (the dependency contract). Manifest.toml is
+# platform/version-pinned (see `julia_version` field) and would break
+# cross-machine syncing — each environment resolves its own Manifest from
+# Project.toml on first instantiate.
+julia-env/Manifest.toml
 julia-env/.CondaPkg/
-julia-env/Project.toml.bak
 .julia/
 knowledge-base/literature/**/.raw/
 knowledge-base/literature/**/.figures/

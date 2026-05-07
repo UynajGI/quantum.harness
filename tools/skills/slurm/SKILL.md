@@ -36,6 +36,14 @@ For parameter sweeps that map onto an array of cells, compose with `/parameter-s
    - `rsync`: `rsync -avz --exclude='/results' --exclude='/.git' . <alias>:<repo>/`.
 5. **Submit**: `ssh <alias> "cd <repo> && sbatch <script>"` (with the partition picked in step 2). Capture job id. For array jobs, the cell map is rsynced to `results/<run>/cells/` first.
 6. **Monitor**: poll `ssh <alias> "squeue -j <jobid> -h -o '%T %M %R'"`. **Critical first check — settle-time within 1–3 min of submit**: tail at least one cell's log to confirm actual compute is happening, not just "RUNNING" status. Sbatch can start a cell, hit a startup error (wrong PATH, missing module, OOM-at-init, broken sbatch.sh), and exit within seconds — but the cell may briefly show RUNNING before flipping to FAILED/COMPLETED. Catching this early prevents a fire-and-forget failure across the whole grid. Per AGENTS.md "Monitor before declaring success". After the early settle, periodically poll for state transitions (PENDING → RUNNING → COMPLETED/FAILED) and tail one log every 30–60 min for multi-hour jobs.
+
+   **Utilization check (thread-level, NOT process-level)**: when checking "is the job actually using its allocated cores", a single `top` snapshot showing `%CPU = 100` from the process row is **not** a utilization measurement — that's one thread's instantaneous CPU on one core, which a multi-threaded process can saturate even when 7/8 cores are idle. The right inspection on the compute node is:
+   - `cat /proc/<pid>/status | grep -E '^(Threads|Cpus_allowed_list)'` — confirms allocated cores AND total thread count.
+   - `ps -L -p <pid> -o tid,psr,pcpu,stat` — per-thread CPU breakdown with the `psr` column showing which core each thread is on. If threads are spread across all allocated cores, BLAS / pthread parallelism is working.
+   - `top -H -b -n 1 -p <pid>` — live threads view; useful for spotting one runaway thread vs spread parallelism.
+   - Aggregate `%CPU` from `top` (which can exceed 100%) is the right scalar: 234% = 2.34 cores worth of work, not 234% of one core.
+
+   For workloads with inherent serial bottlenecks (Markov chains, ED iterative solvers), 100% per-core utilization is unreachable; ~25-50% spread across N allocated cores is normal and is NOT a misconfiguration. Resist the impulse to cancel-and-resubmit based on a single `%CPU = 100` snapshot.
 7. **Fetch**: when COMPLETED, `rsync -avz <alias>:<repo>/results/<run>/ results/<run>/`.
 8. **Diagnose**: classify exit per cell (success / OOM / walltime / logic / convergence-out-of-budget) using `sacct -j <jobid> --format=JobID,State,ExitCode,MaxRSS,Elapsed`. Surface failures with classification.
 9. **Hand back**: job record + local results path + per-cell status table.

@@ -25,15 +25,19 @@ For parameter sweeps that map onto an array of cells, compose with `/parameter-s
 
 ## Workflow
 
-1. **Pre-check**: cluster profile resolves; ssh alias works (`ssh <alias> echo ok`); local git tree state recorded.
-2. **Ship**:
-   - `git`: stage and commit if working tree dirty (with the user's ratification on the message; don't commit unless the user has authorized this run); `git push origin <branch>`; `ssh <alias> "cd <repo> && git fetch && git checkout <branch> && git pull"`.
-   - `rsync`: `rsync -avz --exclude='/results' --exclude='/.git' --exclude='/julia-env' . <alias>:<repo>/`.
-3. **Submit**: `ssh <alias> "cd <repo> && sbatch <script>"`. Capture job id. For array jobs, the cell map is rsynced to `results/<run>/cells/` first.
-4. **Monitor**: poll `ssh <alias> "squeue -j <jobid> -h -o '%T %M %R'"` periodically. Surface state transitions (PENDING → RUNNING → COMPLETED/FAILED). For long-running cells, optional periodic `tail` of one cell's log to confirm progress.
-5. **Fetch**: when COMPLETED, `rsync -avz <alias>:<repo>/results/<run>/ results/<run>/`.
-6. **Diagnose**: classify exit per cell (success / OOM / walltime / logic / convergence-out-of-budget) using `sacct -j <jobid> --format=JobID,State,ExitCode,MaxRSS,Elapsed`. Surface failures with classification.
-7. **Hand back**: job record + local results path + per-cell status table.
+1. **Pre-check**: cluster profile resolves (`tools/cluster/<active>.md`); ssh alias works (`ssh <alias> echo ok`); local git tree state recorded.
+2. **First-run bootstrap** (only if needed; idempotent):
+   - Test if `<repo_path_remote>` exists on cluster. If not, `git clone` per the profile's `bootstrap_one_time` snippet.
+   - Test if `<repo>/julia-env/Manifest.toml` is instantiated (use `tools/cli/setup-julia.sh verify <repo>/julia-env <smoke-pkg>` via ssh — exit code 0 means ready). If not, dispatch `/setup-julia --target remote:<alias>` to install Julia (per `bootstrap_one_time`'s module-load or juliaup recipe), configure mirror per profile's `region`, and run `Pkg.instantiate()`.
+   - If the cluster's `bootstrap_one_time` declares cluster-specific quirks beyond Julia (license server, depot path, etc.), run them once, write a `~/.harness-bootstrapped` marker on the cluster.
+3. **Ship**:
+   - `git`: stage and commit if working tree dirty (only with user authorization for this run); `git push origin <branch>`; `ssh <alias> "cd <repo> && git fetch && git checkout <branch> && git pull"`.
+   - `rsync`: `rsync -avz --exclude='/results' --exclude='/.git' . <alias>:<repo>/`.
+4. **Submit**: `ssh <alias> "cd <repo> && sbatch <script>"`. Capture job id. For array jobs, the cell map is rsynced to `results/<run>/cells/` first.
+5. **Monitor**: poll `ssh <alias> "squeue -j <jobid> -h -o '%T %M %R'"` periodically. Surface state transitions (PENDING → RUNNING → COMPLETED/FAILED). For long-running cells, optional periodic `tail` of one cell's log to confirm progress.
+6. **Fetch**: when COMPLETED, `rsync -avz <alias>:<repo>/results/<run>/ results/<run>/`.
+7. **Diagnose**: classify exit per cell (success / OOM / walltime / logic / convergence-out-of-budget) using `sacct -j <jobid> --format=JobID,State,ExitCode,MaxRSS,Elapsed`. Surface failures with classification.
+8. **Hand back**: job record + local results path + per-cell status table.
 
 ## Resume semantics
 
@@ -43,16 +47,18 @@ For parameter sweeps that map onto an array of cells, compose with `/parameter-s
 
 ## Cluster profile (what the skill reads)
 
-- `ssh_alias` — the ssh config alias for the cluster login node (e.g., `hpc2`).
-- `repo_path_remote` — where the harness checkout lives on the cluster.
-- `default_partition` — e.g., `i64m512u`. The skill bumps if a method-card runtime estimate exceeds the partition's max.
-- `default_walltime` — starting wall-clock; bumped per estimated cell wall.
-- `array_template` — sbatch idiom for array jobs (`#SBATCH --array=...`, `$SLURM_ARRAY_TASK_ID`).
-- `module_preamble` — lines emitted at the top of every per-cell script (e.g., `module load julia/1.10.9`).
-- `status_commands` — the dialect for `squeue` / `sacct` if the cluster wraps them.
-- `filesystem_notes` — whether `/scratch` exists; where results should land.
+Schema is declared in `tools/cluster/README.md`. This skill consults:
 
-If no profile is found, the skill emits a *minimal-Slurm* sbatch (single node, single task, 1-day wall, no module loads) and surfaces a one-line note recommending profile creation.
+- **Connection**: `ssh.alias`, `repo_path_remote`.
+- **Scheduler**: `scheduler.type` (only `slurm` for this skill), `scheduler.default_queue`.
+- **Partitions table** — picks the row by `class` (`default-cpu`, `gpu`, `high-mem`, …) per the calling skill's resource-class hint.
+- **Network**: `internet.from_login` (decides `git clone` vs pre-staged tarball ship), `internet.from_compute` (decides whether package install can happen during a job).
+- **Region** — passed to `/setup-julia` (or other language-setup skills) for mirror defaults.
+- **`bootstrap_one_time`** — shell snippet for cluster-specific one-time setup (clone, module load, env setup). Run on first cluster use; marker file `~/.harness-bootstrapped` records completion.
+- **Sbatch idioms** — single-cell and array-job templates.
+- **Status / queue commands** — `squeue` / `sacct` dialect.
+
+If no profile is found, the skill emits a *minimal-Slurm* sbatch (single node, single task, 1-day wall, no module loads) and surfaces a one-line note recommending `/onboard`'s cluster-setup stage to create one.
 
 ## Output
 
@@ -65,7 +71,9 @@ If no profile is found, the skill emits a *minimal-Slurm* sbatch (single node, s
 
 - `/parameter-scan` calls `/slurm` once with an array of cells when the user is sweeping on a cluster.
 - `/reproduce-paper` calls `/slurm` for any cluster step in the figure pipeline.
-- Manifest schema is per-method-card convention; `/run-report` consumes them at session close.
+- `/setup-julia` is dispatched by `/slurm`'s first-run bootstrap when the cluster's `julia-env/Manifest.toml` isn't instantiated yet.
+- `/onboard` populates the cluster profile this skill reads.
+- Manifest schema is per-method-card convention; the writeup-handoff close in `/reproduce-paper` consumes them at session close.
 
 ## Notes
 

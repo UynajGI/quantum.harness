@@ -1,7 +1,11 @@
 raw/
 .zulip/
 .DS_Store
-julia-env/
+# Lock files (Project.toml, Manifest.toml) ARE committed for reproducibility;
+# only the package depot / compile cache stays local.
+julia-env/.CondaPkg/
+julia-env/Project.toml.bak
+.julia/
 knowledge-base/literature/**/.raw/
 knowledge-base/literature/**/.figures/
 
@@ -16,3 +20,4 @@ CLAUDE.md
 /scripts/
 /results/
 __pycache__/
+.claude/skills/ion-cli

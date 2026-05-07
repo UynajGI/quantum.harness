@@ -19,6 +19,7 @@ parameter-scan = { type = "local" }     # multi-axis sweeps (subsumes finite-siz
 scaling-fit = { type = "local" }
 cross-method-check = { type = "local" }
 slurm = { type = "local" }              # cluster mechanism (agent-does-ssh)
+setup-julia = { type = "local" }        # Julia install + mirror + project env (local or remote)
 reproduce-paper = { type = "local" }    # paper orchestrator (absorbs run-report close)
 verify = { type = "local" }
 

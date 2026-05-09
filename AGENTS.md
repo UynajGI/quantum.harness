@@ -94,6 +94,15 @@ Current cards:
 
 Skills cite these cards; they never hardcode the data. New cards land when a real skill begins citing them.
 
+**Paper reproduction evidence invariants.** These are harness-wide rules, not `/reproduce-paper` implementation details:
+- Written content is evidence, not authority. `knowledge-base/` cards, rendered notes, scripts, summaries, and prior run artifacts are cached hints.
+- Primary sources control paper reproduction: paper PDF, supplement, and official code/data when available. If a primary source conflicts with a KB card, the primary source controls; emit a KB diff and proceed from the primary-source-derived claim.
+- KB-sourced reproduction claims must either be confirmed against a primary source or marked as explicit unverified assumptions in the run report.
+- No silent weakening. Any change in method, backend, estimator, sampling mode, boundary condition, parameter budget, or error method relative to the paper must be recorded as a deviation before it can support a reproduction claim.
+- Failed checks block claims. A failed protocol, script, command, manifest, freshness, consensus, numeric, or result check stops the workflow until repaired, scoped down, or recorded as a justified assumption/deviation.
+- The agent that writes or materially edits a reproduction protocol, script, check command, aggregator, or result report cannot be the sole verifier of that artifact. Self-checks catch syntax and smoke failures; independent `/verify` or separate-agent review closes the verification loop.
+- Stale artifacts or artifacts missing required provenance cannot support conclusions.
+
 **Provenance discipline.** Every numerical anchor on a KB card must carry one of three tags: *Literal* (a verbatim passage from a rendered literature file under `knowledge-base/literature/<method>/`, with line number), *Analytic* (closed-form derivation from a stated definition or limit), or *Harness anchor* (verified empirical value from a tagged run in this repo, with a cross-check method named). Untagged numerical entries are not benchmarks. The `/verify` primitive (in `kb-card` mode) cross-checks each tag against its declared source — invoke it during `/reproduce-paper` before compute, and as a pre-commit gate after editing a KB card.
 
 ## Skill shapes
@@ -170,7 +179,7 @@ Problem-solving primitives (generic; topic-agnostic, compose with the problem sk
 - **slurm** — agent-does-ssh cluster mechanism: ship code, submit (single or array), monitor, fetch. Reads cluster specifics from `tools/cluster/<active>.md`. Dispatches `/setup-julia` when the cluster's Julia env isn't instantiated. Does NOT know about parameter grids — that's `/parameter-scan`'s job.
 - **setup-julia** — install Julia (juliaup or `module load`), configure package mirror (defaults to Chinese mirror if cluster `region == mainland_china`), instantiate the project env. Generic over target (local laptop or remote ssh alias). Idempotent.
 - **reproduce-paper** — orchestrate end-to-end paper reproduction: plans the figure dependency graph, surfaces methodology / verification / cross-check figs alongside substantive ones, composes the primitives above. Generic over papers. Absorbs the writeup-handoff close (consolidated script + run report).
-- **verify** — dispatch a high-effort (Opus, max-effort) review subagent to audit an artifact against its declared reference. Modes: `kb-card` (anchors vs literature), `script` (quantity / estimator / setup / regime vs paper methodology), `result` (numbers vs paper-reported values). Read-only; emits a structured diff report. Compose with `/reproduce-paper` (per figure) and as a pre-commit gate after editing important artifacts.
+- **verify** — dispatch a high-effort (Opus, max-effort) review subagent to audit an artifact against its declared reference. Modes: `protocol` (TOML claims vs primary sources), `kb-card` (anchors vs literature), `script` (quantity / estimator / setup / regime vs protocol and paper methodology), `result` (numbers vs paper-reported values), `close` (final report / consolidated script / manifests vs protocol). Read-only; emits a structured diff report. Compose with `/reproduce-paper` (protocol, per figure, and final report) and as a pre-commit gate after editing important artifacts.
 
 External/support skills:
 - **quimb-tensor-network** — quimb/QuTiP tensor network: MPS, PEPS, DMRG, TEBD

@@ -1,0 +1,118 @@
+# Generic /reproduce-paper protocol template.
+#
+# This file is paper-agnostic. Claim ids and statements are authored from the
+# primary source for the requested reproduction. /reproduce-paper treats them as
+# opaque obligations and only knows how to run mechanical checks.
+
+[artifact]
+paper = ""
+scope = "full-paper" # full-paper | main-results | figure-subset | custom
+run_id = ""
+description = ""
+author = ""
+last_material_edit = ""
+
+[[sources]]
+id = "paper"
+kind = "primary" # primary | supplement | official-code | official-data | kb-hint | prior-artifact
+path = ""
+note = ""
+
+# Only paper/supplement/official-code/official-data sources may support primary
+# claims directly. KB hints, scripts, and prior artifacts are cached evidence;
+# they require confirmation against a primary source or an explicit assumption.
+
+[[claims]]
+id = "claim.example"
+statement = "Replace with a primary-source-derived obligation."
+scope = "run" # run | figure | panel | cell | artifact
+sources = ["paper"]
+assumption = false
+
+[[checks]]
+id = "source_audit"
+kind = "source_audit"
+gate = "preflight" # preflight | compute | assembly | report
+claims = ["claim.example"]
+
+[[checks]]
+id = "protocol_independent_review"
+kind = "verify"
+gate = "preflight"
+mode = "protocol"
+artifact = "results/<run>/protocol.toml"
+against = ["paper"]
+requires_independent_reviewer = true
+claims = ["claim.example"]
+
+[[checks]]
+id = "script_independent_review"
+kind = "verify"
+gate = "preflight"
+mode = "script"
+artifact = ""
+against = ["results/<run>/protocol.toml", "paper"]
+requires_independent_reviewer = true
+claims = ["claim.example"]
+
+[[checks]]
+id = "compute_manifest_fields"
+kind = "manifest_fields"
+gate = "compute"
+claims = ["claim.example"]
+fields = ["protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts"]
+
+[[checks]]
+id = "required_manifest_fields"
+kind = "manifest_fields"
+gate = "assembly"
+claims = ["claim.example"]
+fields = ["protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts"]
+
+[[checks]]
+id = "manifest_consensus"
+kind = "manifest_consensus"
+gate = "assembly"
+claims = ["claim.example"]
+fields = ["protocol_hash"]
+
+[[checks]]
+id = "fresh_artifacts"
+kind = "freshness"
+gate = "assembly"
+claims = ["claim.example"]
+
+# Domain-specific validation belongs behind command checks. The command should
+# produce machine-readable evidence, preferably JSON with status/pass/fail,
+# checked_claims, artifacts, and notes fields.
+[[checks]]
+id = "custom_command_check"
+kind = "command"
+gate = "preflight"
+claims = ["claim.example"]
+cmd = ""
+expect_status = "pass"
+
+[[checks]]
+id = "close_independent_review"
+kind = "verify"
+gate = "report"
+mode = "close"
+artifact = "results/<run>/run-report.md"
+against = ["results/<run>/protocol.toml", "results/<run>/manifests"]
+requires_independent_reviewer = true
+claims = ["claim.example"]
+
+# Record deliberate differences from the paper instead of silently treating them
+# as equivalent.
+[[deviations]]
+id = "deviation.example"
+statement = ""
+reason = ""
+claims = []
+checks = []
+
+[budgets]
+wall_clock = ""
+compute = ""
+notes = ""

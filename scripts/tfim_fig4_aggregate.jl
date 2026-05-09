@@ -1,4 +1,4 @@
-# Aggregator for paper-grade Fig 4 reproduction. Collects all per-cell manifests
+# Aggregator for cached Eq.-(24) Fig 4 diagnostic runs. Collects all per-cell manifests
 # (written by tfim_fig4_paper_grade.jl in per-cell SLURM mode), runs Stage 3
 # (increment recursion), and emits panels (a), (b), the σ_{m_2}-vs-L inset, and
 # data.json + summary.
@@ -6,27 +6,93 @@
 # Run after the SLURM array job finishes:
 #   julia --project=julia-env scripts/tfim_fig4_aggregate.jl
 #
-# Resume-friendly: skips cells whose manifest is missing (they show up in the
-# missing-cell list at the bottom of the report).
+# Strict assembly: every declared cell must be present, fresh enough to carry
+# provenance, and consensus-compatible before plots or data.json are written.
 
 using JSON
 using Printf
 using Plots
+using SHA
 
 const OUTDIR   = joinpath(@__DIR__, "..", "results", "tfim_fig4_paper_grade")
 const CELL_DIR = joinpath(OUTDIR, "cells")
+const EXPECTED_PROPOSAL = "paper_multiply_Zi_or_XiXj"
+const PRODUCER_SCRIPT_PATH = normpath(joinpath(@__DIR__, "tfim_fig4_paper_grade.jl"))
+const PRODUCER_SCRIPT_HASH = bytes2hex(sha256(read(PRODUCER_SCRIPT_PATH)))
+const DEFAULT_LS_CHAIN = [16, 32, 64, 128]
+const DEFAULT_H_GRID = [0.80, 0.90, 0.95, 1.00, 1.05, 1.10, 1.20]
+const REQUIRED_MANIFEST_FIELDS = [
+    "protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts",
+    "proposal", "expectation_backend", "L", "h", "L_min", "chi", "n_steps", "pbc", "M2_anchor_at_L_min",
+]
+const CONSENSUS_FIELDS = [
+    "protocol_hash", "script_hash", "sources", "claims", "deviations",
+    "proposal", "L_min", "chi", "n_steps", "pbc",
+]
+
+function parse_int_list_env(name::String, default::Vector{Int})
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return default
+    return [parse(Int, strip(x)) for x in split(raw, ',') if !isempty(strip(x))]
+end
+
+function parse_float_list_env(name::String, default::Vector{Float64})
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return default
+    return [parse(Float64, strip(x)) for x in split(raw, ',') if !isempty(strip(x))]
+end
+
+function require_manifest_provenance(d::Dict{String,Any}, f::String)
+    for field in REQUIRED_MANIFEST_FIELDS
+        haskey(d, field) || error("Manifest missing required field '$field': $f")
+    end
+    !isempty(strip(string(d["protocol_hash"]))) || error("Manifest has empty protocol_hash: $f")
+    !isempty(strip(string(d["script_hash"]))) || error("Manifest has empty script_hash: $f")
+    d["script_hash"] == PRODUCER_SCRIPT_HASH ||
+        error("Manifest script_hash does not match current producer script: $f")
+    d["sources"] isa Vector && !isempty(d["sources"]) || error("Manifest has empty sources: $f")
+    d["claims"] isa Vector && !isempty(d["claims"]) || error("Manifest has empty claims: $f")
+    d["deviations"] isa Vector || error("Manifest deviations must be a list: $f")
+    d["artifacts"] isa Dict || error("Manifest artifacts must be a table: $f")
+    haskey(d["artifacts"], "manifest") || error("Manifest artifacts missing manifest path: $f")
+    startswith(string(d["expectation_backend"]), "mps_cached_") ||
+        error("Manifest does not use cached MPS expectation backend: $f")
+end
 
 function load_cells()
+    isdir(CELL_DIR) || error("No manifest directory $CELL_DIR — run the per-cell job first.")
     cells = Dict{Tuple{Int,Float64}, Dict{String,Any}}()
     for f in readdir(CELL_DIR; join=true)
-        endswith(f, ".json") || continue
-        startswith(basename(f), "manifest_") || continue
+        match(r"^manifest_L\d+_h\d+\.\d+\.json$", basename(f)) === nothing && continue
         d = open(f) do io; JSON.parse(io); end
-        L = d["L"]
-        h = d["h"]
+        require_manifest_provenance(d, f)
+        d["proposal"] == EXPECTED_PROPOSAL || error("Incompatible proposal in $f: $(d["proposal"])")
+        d["L"] > d["L_min"] || error("Stale c_L manifest at or below L_min in $f")
+        L = Int(d["L"])
+        h = Float64(d["h"])
+        haskey(cells, (L, h)) && error("Duplicate manifest for L=$L h=$h")
         cells[(L, h)] = d
     end
     return cells
+end
+
+function validate_declared_grid!(cells, Ls_chain::Vector{Int}, h_grid::Vector{Float64})
+    expected = Set((L, h) for L in Ls_chain for h in h_grid)
+    actual = Set(keys(cells))
+    missing = sort(collect(setdiff(expected, actual)))
+    extra = sort(collect(setdiff(actual, expected)))
+    isempty(missing) || error("Missing required manifests: $(missing)")
+    isempty(extra) || error("Unexpected manifests outside declared grid: $(extra)")
+end
+
+function validate_manifest_consensus!(cells)
+    first_cell = first(values(cells))
+    for field in CONSENSUS_FIELDS
+        expected = first_cell[field]
+        for ((L, h), d) in cells
+            d[field] == expected || error("Manifest consensus failure for '$field' at L=$L h=$h: $(d[field]) != $expected")
+        end
+    end
 end
 
 function increment_recursion_M2(M2_min::Float64, L_min::Int, cs::Vector{Float64})
@@ -47,39 +113,32 @@ function main()
         error("No manifests under $CELL_DIR — run the per-cell SLURM job first.")
     end
 
-    # Reconstruct (L, h) grid from manifests.
-    Ls_chain = sort(unique([k[1] for k in keys(cells)]))
-    h_grid   = sort(unique([k[2] for k in keys(cells)]))
+    Ls_chain = parse_int_list_env("FIG4_EXPECTED_LS", DEFAULT_LS_CHAIN)
+    h_grid   = parse_float_list_env("FIG4_EXPECTED_H_GRID", DEFAULT_H_GRID)
+    validate_declared_grid!(cells, Ls_chain, h_grid)
+    validate_manifest_consensus!(cells)
+
     L_min    = first(values(cells))["L_min"]
     chi      = first(values(cells))["chi"]
     n_steps  = first(values(cells))["n_steps"]
     pbc      = first(values(cells))["pbc"]
+    proposal = first(values(cells))["proposal"]
+    backends = sort(unique([string(d["expectation_backend"]) for d in values(cells)]))
     Ls_full  = [L_min; Ls_chain...]
 
-    @printf("Aggregator: L_chain=%s   h_grid=%s   L_min=%d   χ=%d   N_S=%d   PBC=%s\n",
-            string(Ls_chain), string(h_grid), L_min, chi, n_steps, string(pbc))
+    @printf("Aggregator: L_chain=%s   h_grid=%s   L_min=%d   χ=%d   N_S=%d   PBC=%s   proposal=%s   backends=%s\n",
+            string(Ls_chain), string(h_grid), L_min, chi, n_steps, string(pbc), proposal, string(backends))
     flush(stdout)
 
     # M_2 anchors at L_min (per-h, taken from any cell at that h).
     M2_anchor = Dict{Float64, Float64}()
     for h in h_grid
+        anchor = cells[(first(Ls_chain), h)]["M2_anchor_at_L_min"]
         for L in Ls_chain
-            if haskey(cells, (L, h))
-                M2_anchor[h] = cells[(L, h)]["M2_anchor_at_L_min"]
-                break
-            end
+            cells[(L, h)]["M2_anchor_at_L_min"] == anchor ||
+                error("M2 anchor consensus failure at h=$h between L=$(first(Ls_chain)) and L=$L")
         end
-    end
-
-    # Missing-cell tracking.
-    missing_cells = Tuple{Int,Float64}[]
-    for L in Ls_chain, h in h_grid
-        haskey(cells, (L, h)) || push!(missing_cells, (L, h))
-    end
-    if !isempty(missing_cells)
-        @printf("WARNING: %d cells missing — Stage 3 will be partial.\n  %s\n",
-                length(missing_cells), string(missing_cells))
-        flush(stdout)
+        M2_anchor[h] = anchor
     end
 
     # Stage 3: increment recursion per h.
@@ -89,38 +148,34 @@ function main()
     cL_err  = Dict{Tuple{Int,Float64}, Float64}()
     println("\n############ Stage 3: increment recursion ############")
     for h in h_grid
-        # Stop the recursion at the first L missing a cell.
-        usable_chain = Int[]
         for L in Ls_chain
-            haskey(cells, (L, h)) || break
-            push!(usable_chain, L)
             cL_data[(L, h)] = cells[(L, h)]["cL"]
             cL_err[(L, h)]  = cells[(L, h)]["se"]
         end
 
-        cs   = [cL_data[(L, h)] for L in usable_chain]
-        cerr = [cL_err[(L, h)]  for L in usable_chain]
+        cs   = [cL_data[(L, h)] for L in Ls_chain]
+        cerr = [cL_err[(L, h)]  for L in Ls_chain]
         rec  = increment_recursion_M2(M2_anchor[h], L_min, cs)
         M2_grid[(L_min, h)] = rec[L_min]
         M2_err[(L_min, h)]  = 0.0
         prev_err = 0.0
-        for (k, L) in enumerate(usable_chain)
+        for (k, L) in enumerate(Ls_chain)
             M2_grid[(L, h)] = rec[L]
             err_k = sqrt((2*prev_err)^2 + cerr[k]^2)
             M2_err[(L, h)] = err_k
             prev_err = err_k
         end
         @printf("  h=%.2f   m_2(L_min=%d) = %.5f   m_2(L=%d) = %.5f ± %.5f\n",
-                h, L_min, rec[L_min]/L_min, last(usable_chain),
-                rec[last(usable_chain)] / last(usable_chain),
-                M2_err[(last(usable_chain), h)] / last(usable_chain))
+                h, L_min, rec[L_min]/L_min, last(Ls_chain),
+                rec[last(Ls_chain)] / last(Ls_chain),
+                M2_err[(last(Ls_chain), h)] / last(Ls_chain))
     end
     flush(stdout)
 
     # data.json: full reproduction record.
     combined = Dict(
         "model"     => "1D TFIM",
-        "estimator" => "Eq.-(24) ratio chain (paper-grade)",
+        "estimator" => "cached Eq.-(24) ratio-chain diagnostic",
         "L_min"     => L_min,
         "Ls_chain"  => Ls_chain,
         "Ls_full"   => Ls_full,
@@ -128,12 +183,19 @@ function main()
         "chi"       => chi,
         "n_steps"   => n_steps,
         "pbc"       => pbc,
+        "proposal"  => proposal,
+        "expectation_backends" => backends,
+        "protocol_hash" => first(values(cells))["protocol_hash"],
+        "script_hash" => first(values(cells))["script_hash"],
+        "sources" => first(values(cells))["sources"],
+        "claims" => first(values(cells))["claims"],
+        "deviations" => first(values(cells))["deviations"],
         "M2_anchor" => Dict(string(h) => M2_anchor[h] for h in h_grid),
         "c_L"       => Dict(string(L) => [get(cL_data, (L, h), NaN)  for h in h_grid] for L in Ls_chain),
         "c_L_err"   => Dict(string(L) => [get(cL_err,  (L, h), NaN)  for h in h_grid] for L in Ls_chain),
         "M_2"       => Dict(string(L) => [get(M2_grid, (L, h), NaN)  for h in h_grid] for L in Ls_full),
         "M_2_err"   => Dict(string(L) => [get(M2_err,  (L, h), NaN)  for h in h_grid] for L in Ls_full),
-        "missing_cells" => [collect(c) for c in missing_cells],
+        "expected_cells" => length(Ls_chain) * length(h_grid),
     )
     open(joinpath(OUTDIR, "data.json"), "w") do f
         JSON.print(f, combined, 2)
@@ -145,7 +207,7 @@ function main()
     palette = [:steelblue, :firebrick, :seagreen, :darkorange, :mediumorchid]
 
     pa = plot(xlabel="h", ylabel="c_L = 2 M_2(L/2) − M_2(L)",
-              title="Fig 4(a) — Eq.-(24) ratio chain (paper-grade)",
+              title="Fig 4(a) — cached Eq.-(24) ratio-chain diagnostic",
               xticks=h_grid, legend=:bottomright)
     for (k, L) in enumerate(Ls_chain)
         cs   = [get(cL_data, (L, h), NaN) for h in h_grid]
@@ -158,7 +220,7 @@ function main()
     savefig(pa, joinpath(OUTDIR, "panel_a_cL_vs_h.png"))
 
     pb = plot(xlabel="h", ylabel="m_2 = M_2 / L",
-              title="Fig 4(b) — m_2 via increment recursion (paper-grade)",
+              title="Fig 4(b) — m_2 via increment recursion (diagnostic)",
               xticks=h_grid, legend=:topright)
     for (k, L) in enumerate(Ls_full)
         m2s    = [get(M2_grid, (L, h), NaN) / L for h in h_grid]
@@ -200,10 +262,10 @@ function main()
 
     # Summary.
     println("\n=========================================================")
-    println("SUMMARY — paper-grade Fig 4 reproduction (Eq.-(24) ratio chain)")
+    println("SUMMARY — cached Fig 4 Eq.-(24) diagnostic")
     println("=========================================================")
-    @printf("  Cells: %d / %d collected (%d missing).\n",
-            length(cells), length(Ls_chain)*length(h_grid), length(missing_cells))
+    @printf("  Cells: %d / %d collected.\n",
+            length(cells), length(Ls_chain)*length(h_grid))
     println("  c_L extremum (most negative) per L:")
     for L in Ls_chain
         cs = Float64[]

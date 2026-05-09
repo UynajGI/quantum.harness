@@ -1,10 +1,10 @@
-# Reproduces validation paper Fig 4 with the paper's *dedicated* estimator.
+# Cached Eq.-(24) ratio-chain diagnostic for validation paper Fig 4.
 #
 #   - Panel (a): c_L = 2 M_2(L/2) − M_2(L), estimated by the Eq.-(24) ratio
 #     chain — single Markov chain on Π_{P,2} ∝ |⟨P⟩_L|⁴, accumulating
 #         R(P) = |⟨P^(1)⟩_{L/2}|⁴ · |⟨P^(2)⟩_{L/2}|⁴ / |⟨P⟩_L|⁴
-#     with c_L = -log⟨R⟩_{Π_{P,2}}. Volume-law cancels inside the log under
-#     one expectation → polynomial-in-L variance (paper's central claim).
+#     with c_L = -log⟨R⟩_{Π_{P,2}}. Exact small-L diagnostics must gate this
+#     path because the one-sided ratio can be rare-event dominated.
 #
 #   - Panel (b): m_2(L) = M_2(L)/L, reconstructed via the increment recursion
 #         M_2(L) = 2^k · M_2(L_min) − Σ_{j=1..k} 2^{k-j} c_{L_min · 2^j}
@@ -25,7 +25,7 @@
 #
 # Run:  julia --project=julia-env scripts/tfim_fig4_paper_grade.jl
 # Local prototype scale:  L=16, h={0.95, 1.0, 1.05}, N_S=1e5, ~5 min wall.
-# HPC2 paper grade:       full L/h grid, N_S=1e6, via /slurm-grid.
+# Full paper-scale runs require an independent exact/small-L gate before use.
 
 using ITensors, ITensorMPS
 using LinearAlgebra
@@ -34,6 +34,66 @@ using Printf
 using Statistics
 using JSON
 using Plots
+using SHA
+
+const SCRIPT_PATH = normpath(@__FILE__)
+const SCRIPT_HASH = bytes2hex(sha256(read(SCRIPT_PATH)))
+const COMPUTE_MANIFEST_FIELDS = [
+    "protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts",
+]
+const PAULI_MATRICES = [
+    ComplexF64[1.0 0.0; 0.0 1.0],
+    ComplexF64[0.0 1.0; 1.0 0.0],
+    ComplexF64[0.0 -1.0im; 1.0im 0.0],
+    ComplexF64[1.0 0.0; 0.0 -1.0],
+]
+
+function env_list(name::String)
+    raw = strip(get(ENV, name, ""))
+    isempty(raw) && return String[]
+    return [strip(x) for x in split(raw, ';') if !isempty(strip(x))]
+end
+
+function reproduction_provenance()
+    protocol_hash = strip(get(ENV, "HARNESS_PROTOCOL_HASH", ""))
+    sources = env_list("HARNESS_SOURCES")
+    claims = env_list("HARNESS_CLAIMS")
+    deviations = env_list("HARNESS_DEVIATIONS")
+    if isempty(protocol_hash) || isempty(sources) || isempty(claims)
+        error("Missing reproduction provenance. Set HARNESS_PROTOCOL_HASH, HARNESS_SOURCES, and HARNESS_CLAIMS before running the Eq.-(24) diagnostic.")
+    end
+    return Dict(
+        "protocol_hash" => protocol_hash,
+        "script_hash" => SCRIPT_HASH,
+        "script_path" => SCRIPT_PATH,
+        "sources" => sources,
+        "claims" => claims,
+        "deviations" => deviations,
+    )
+end
+
+function validate_compute_manifest!(d::Dict, path::String)
+    for field in COMPUTE_MANIFEST_FIELDS
+        haskey(d, field) || error("Compute gate failed for $path: missing manifest field '$field'")
+    end
+    !isempty(strip(string(d["protocol_hash"]))) ||
+        error("Compute gate failed for $path: empty protocol_hash")
+    d["script_hash"] == SCRIPT_HASH ||
+        error("Compute gate failed for $path: script_hash does not match current script")
+    d["sources"] isa Vector && !isempty(d["sources"]) ||
+        error("Compute gate failed for $path: sources must be a nonempty list")
+    d["claims"] isa Vector && !isempty(d["claims"]) ||
+        error("Compute gate failed for $path: claims must be a nonempty list")
+    d["deviations"] isa Vector ||
+        error("Compute gate failed for $path: deviations must be a list")
+    d["artifacts"] isa Dict ||
+        error("Compute gate failed for $path: artifacts must be a table")
+    get(d["artifacts"], "manifest", nothing) == path ||
+        error("Compute gate failed for $path: manifest artifact path mismatch")
+    get(d["artifacts"], "script", nothing) == SCRIPT_PATH ||
+        error("Compute gate failed for $path: script artifact path mismatch")
+    return true
+end
 
 # ---------------- Hamiltonian + DMRG (PBC) ----------------
 
@@ -128,6 +188,190 @@ function mps_pauli_expectation(psi::MPS, p::Vector{Int}, sites)
     return real(inner(psi, Ppsi))
 end
 
+# Cached MPS expectation backend.
+#
+# Store dense MPS tensors plus left/right Pauli environments for the current
+# string. Candidate local updates are evaluated by contracting only the changed
+# interval between cached environments; accepted updates refresh the affected
+# environment ranges. This is the MPS analog of cached TTN link operators: the
+# chain state owns reusable contraction state instead of rebuilding P|ψ⟩.
+mutable struct CachedMPSPauliExpectation
+    arrays::Vector{Array{ComplexF64, 3}}
+    p::Vector{Int}
+    left::Vector{Matrix{ComplexF64}}
+    right::Vector{Matrix{ComplexF64}}
+end
+
+function mps_dense_arrays(psi_in::MPS, sites)
+    psi = copy(psi_in)
+    orthogonalize!(psi, 1)
+    L = length(psi)
+    arrays = Vector{Array{ComplexF64, 3}}(undef, L)
+    for i in 1:L
+        T = psi[i]
+        s_idx = sites[i]
+        l_idx = i == 1 ? nothing : commonind(psi[i-1], psi[i])
+        r_idx = i == L ? nothing : commonind(psi[i], psi[i+1])
+        s_dim = dim(s_idx)
+        l_dim = l_idx === nothing ? 1 : dim(l_idx)
+        r_dim = r_idx === nothing ? 1 : dim(r_idx)
+        A = zeros(ComplexF64, s_dim, l_dim, r_dim)
+        if i == 1 && i == L
+            for s in 1:s_dim
+                A[s, 1, 1] = T[s_idx => s]
+            end
+        elseif i == 1
+            for s in 1:s_dim, r in 1:r_dim
+                A[s, 1, r] = T[s_idx => s, r_idx => r]
+            end
+        elseif i == L
+            for s in 1:s_dim, l in 1:l_dim
+                A[s, l, 1] = T[l_idx => l, s_idx => s]
+            end
+        else
+            for s in 1:s_dim, l in 1:l_dim, r in 1:r_dim
+                A[s, l, r] = T[l_idx => l, s_idx => s, r_idx => r]
+            end
+        end
+        arrays[i] = A
+    end
+    return arrays
+end
+
+function apply_forward_env(left::Matrix{ComplexF64}, A::Array{ComplexF64,3}, code::Int)
+    P = PAULI_MATRICES[code + 1]
+    _, _, r_dim = size(A)
+    out = zeros(ComplexF64, r_dim, r_dim)
+    for s in 1:2, t in 1:2
+        coeff = P[s, t]
+        coeff == 0 && continue
+        As = @view A[s, :, :]
+        At = @view A[t, :, :]
+        out .+= coeff .* (adjoint(As) * left * At)
+    end
+    return out
+end
+
+function apply_backward_env(right::Matrix{ComplexF64}, A::Array{ComplexF64,3}, code::Int)
+    P = PAULI_MATRICES[code + 1]
+    _, l_dim, _ = size(A)
+    out = zeros(ComplexF64, l_dim, l_dim)
+    for s in 1:2, t in 1:2
+        coeff = P[s, t]
+        coeff == 0 && continue
+        As = @view A[s, :, :]
+        At = @view A[t, :, :]
+        out .+= coeff .* (conj.(As) * right * transpose(At))
+    end
+    return out
+end
+
+interval_value(env::Matrix{ComplexF64}, right::Matrix{ComplexF64}) = real(sum(env .* right))
+
+function rebuild_cached_envs!(cache::CachedMPSPauliExpectation)
+    L = length(cache.p)
+    cache.left[1] = ones(ComplexF64, 1, 1)
+    for i in 1:L
+        cache.left[i + 1] = apply_forward_env(cache.left[i], cache.arrays[i], cache.p[i])
+    end
+    cache.right[L + 1] = ones(ComplexF64, 1, 1)
+    for i in L:-1:1
+        cache.right[i] = apply_backward_env(cache.right[i + 1], cache.arrays[i], cache.p[i])
+    end
+    return cache
+end
+
+function refresh_cached_envs!(cache::CachedMPSPauliExpectation, lo::Int, hi::Int)
+    L = length(cache.p)
+    for i in lo:L
+        cache.left[i + 1] = apply_forward_env(cache.left[i], cache.arrays[i], cache.p[i])
+    end
+    for i in hi:-1:1
+        cache.right[i] = apply_backward_env(cache.right[i + 1], cache.arrays[i], cache.p[i])
+    end
+    return cache
+end
+
+function CachedMPSPauliExpectation(psi::MPS, sites; p=zeros(Int, length(psi)))
+    arrays = mps_dense_arrays(psi, sites)
+    L = length(arrays)
+    cache = CachedMPSPauliExpectation(arrays, copy(p),
+                                      [zeros(ComplexF64, 0, 0) for _ in 1:(L + 1)],
+                                      [zeros(ComplexF64, 0, 0) for _ in 1:(L + 1)])
+    return rebuild_cached_envs!(cache)
+end
+
+function set_cached_pauli!(cache::CachedMPSPauliExpectation, site::Int, code::Int)
+    old = cache.p[site]
+    old == code && return old
+    cache.p[site] = code
+    refresh_cached_envs!(cache, site, site)
+    return old
+end
+
+function set_cached_paulis!(cache::CachedMPSPauliExpectation, i::Int, code_i::Int, j::Int, code_j::Int)
+    old_i = cache.p[i]
+    old_j = cache.p[j]
+    if i == j
+        cache.p[i] = code_j
+        refresh_cached_envs!(cache, i, i)
+        return old_i, old_j
+    end
+    cache.p[i] = code_i
+    cache.p[j] = code_j
+    refresh_cached_envs!(cache, min(i, j), max(i, j))
+    return old_i, old_j
+end
+
+function set_pauli_string!(cache::CachedMPSPauliExpectation, p::Vector{Int})
+    @assert length(p) == length(cache.p)
+    cache.p .= p
+    return rebuild_cached_envs!(cache)
+end
+
+function cached_candidate_value(cache::CachedMPSPauliExpectation, i::Int, code_i::Int)
+    env = apply_forward_env(cache.left[i], cache.arrays[i], code_i)
+    return interval_value(env, cache.right[i + 1])
+end
+
+function cached_candidate_value(cache::CachedMPSPauliExpectation, i::Int, code_i::Int, j::Int, code_j::Int)
+    lo, hi = min(i, j), max(i, j)
+    env = cache.left[lo]
+    for k in lo:hi
+        code = k == i ? code_i : (k == j ? code_j : cache.p[k])
+        env = apply_forward_env(env, cache.arrays[k], code)
+    end
+    return interval_value(env, cache.right[hi + 1])
+end
+
+cached_pauli_value(cache::CachedMPSPauliExpectation) = real(cache.left[end][1, 1])
+
+@inline function time_reversal_allowed(p::Vector{Int})
+    y_parity = false
+    @inbounds for code in p
+        y_parity ⊻= (code == 2)
+    end
+    return !y_parity
+end
+
+@inline function time_reversal_allowed_after(p::Vector{Int}, i::Int, code_i::Int)
+    y_parity = false
+    @inbounds for k in eachindex(p)
+        code = k == i ? code_i : p[k]
+        y_parity ⊻= (code == 2)
+    end
+    return !y_parity
+end
+
+@inline function time_reversal_allowed_after(p::Vector{Int}, i::Int, code_i::Int, j::Int, code_j::Int)
+    y_parity = false
+    @inbounds for k in eachindex(p)
+        code = k == i ? code_i : (k == j ? code_j : p[k])
+        y_parity ⊻= (code == 2)
+    end
+    return !y_parity
+end
+
 # ---------------- Eq.-(24) ratio chain (n=2) ----------------
 #
 # Sampling distribution: Π_{P,2}(P) ∝ |⟨P⟩_L|⁴.
@@ -141,21 +385,25 @@ end
 # expect_Lh : (Vector{Int}) → ⟨P_half⟩_{L/2}    (length L/2 vector)
 
 function pauli_markov_cL_eq24(expect_L, expect_Lh, L::Int;
-                              n_steps=10^5, n_warmup=10^4, seed::UInt32=UInt32(0xC0FFEE))
+                              n_steps=10^5, n_warmup=10^4, seed::UInt32=UInt32(0xC0FFEE),
+                              progress_every=max(1, n_steps ÷ 10))
     @assert iseven(L)
     Lh = L ÷ 2
     rng = MersenneTwister(seed)
     p = zeros(Int, L)
     cur_v = expect_L(p)
     cur_w = abs(cur_v)^4 / 2.0^L          # n=2 sampling weight
-    is_xy(q::Int) = (q == 1 || q == 2)
+    proposal_name = "paper_multiply_Zi_or_XiXj"
+    multiply_Z(old::Int) = old ⊻ 3
+    multiply_X(old::Int) = old ⊻ 1
+    @assert time_reversal_allowed(p)
 
     accum_R = 0.0
     n_acc = 0
+    n_R = 0
 
-    block_size = 100
-    n_blocks = div(n_steps, block_size)
-    block_means = zeros(n_blocks)
+    block_size = max(1_000, n_steps ÷ 100)
+    block_means = Float64[]
     cur_block_sum = 0.0
     cur_block_idx = 0
 
@@ -167,27 +415,35 @@ function pauli_markov_cL_eq24(expect_L, expect_Lh, L::Int;
         if proposal_kind == :single
             i = rand(rng, 1:L)
             old_pi = p[i]
-            new_pi = is_xy(old_pi) ? (old_pi == 1 ? 2 : 1) : (old_pi == 0 ? 3 : 0)
+            new_pi = multiply_Z(old_pi)
             p[i] = new_pi
-            new_v = expect_L(p)
-            new_w = abs(new_v)^4 / 2.0^L
-            ratio = (cur_w == 0 && new_w == 0) ? 0.0 : (cur_w == 0 ? Inf : new_w / cur_w)
-            if rand(rng) < ratio
-                cur_v = new_v; cur_w = new_w; n_acc += 1
+            if time_reversal_allowed(p)
+                new_v = expect_L(p)
+                new_w = abs(new_v)^4 / 2.0^L
+                ratio = (cur_w == 0 && new_w == 0) ? 0.0 : (cur_w == 0 ? Inf : new_w / cur_w)
+                if rand(rng) < ratio
+                    cur_v = new_v; cur_w = new_w; n_acc += 1
+                else
+                    p[i] = old_pi
+                end
             else
                 p[i] = old_pi
             end
         else
             i = rand(rng, 1:L); j = rand(rng, 1:(L-1)); j >= i && (j += 1)
             old_pi, old_pj = p[i], p[j]
-            new_pi = is_xy(old_pi) ? rand(rng, (0, 3)) : rand(rng, (1, 2))
-            new_pj = is_xy(old_pj) ? rand(rng, (0, 3)) : rand(rng, (1, 2))
+            new_pi = multiply_X(old_pi)
+            new_pj = multiply_X(old_pj)
             p[i] = new_pi; p[j] = new_pj
-            new_v = expect_L(p)
-            new_w = abs(new_v)^4 / 2.0^L
-            ratio = (cur_w == 0 && new_w == 0) ? 0.0 : (cur_w == 0 ? Inf : new_w / cur_w)
-            if rand(rng) < ratio
-                cur_v = new_v; cur_w = new_w; n_acc += 1
+            if time_reversal_allowed(p)
+                new_v = expect_L(p)
+                new_w = abs(new_v)^4 / 2.0^L
+                ratio = (cur_w == 0 && new_w == 0) ? 0.0 : (cur_w == 0 ? Inf : new_w / cur_w)
+                if rand(rng) < ratio
+                    cur_v = new_v; cur_w = new_w; n_acc += 1
+                else
+                    p[i] = old_pi; p[j] = old_pj
+                end
             else
                 p[i] = old_pi; p[j] = old_pj
             end
@@ -205,14 +461,19 @@ function pauli_markov_cL_eq24(expect_L, expect_Lh, L::Int;
             if denom > 0
                 R = (abs(v1)^4 * abs(v2)^4) / denom
                 accum_R += R
+                n_R += 1
                 cur_block_sum += R
                 cur_block_idx += 1
                 if cur_block_idx == block_size
-                    blk = div(step - n_warmup, block_size)
-                    if blk <= n_blocks
-                        block_means[blk] = cur_block_sum / block_size
-                    end
+                    push!(block_means, cur_block_sum / block_size)
                     cur_block_sum = 0.0; cur_block_idx = 0
+                end
+                if n_R % progress_every == 0
+                    mean_R_now = accum_R / n_R
+                    @printf("      [%s sample %d/%d] c_L=%+.6f mean_R=%.6e accept=%.4f blocks=%d\n",
+                            proposal_name, n_R, n_steps, -log(mean_R_now), mean_R_now,
+                            n_acc / step, length(block_means))
+                    flush(stdout)
                 end
             end
             # If denom == 0 the chain is stuck on |⟨P⟩_L|² = 0 — skip; n=2
@@ -220,12 +481,130 @@ function pauli_markov_cL_eq24(expect_L, expect_Lh, L::Int;
         end
     end
 
-    mean_R = accum_R / n_steps
-    se_R   = std(block_means) / sqrt(n_blocks)
+    mean_R = accum_R / n_R
+    se_R   = length(block_means) > 1 ? std(block_means) / sqrt(length(block_means)) : NaN
     cL     = -log(mean_R)
     se_cL  = se_R / mean_R
     accept = n_acc / (n_warmup + n_steps)
-    return (cL=cL, se=se_cL, accept=accept, mean_R=mean_R, se_R=se_R)
+    return (cL=cL, se=se_cL, accept=accept, mean_R=mean_R, se_R=se_R,
+            proposal=proposal_name, block_size=block_size, n_recorded=n_R,
+            expectation_backend="stateless_expectation")
+end
+
+function pauli_markov_cL_eq24_cached(full_cache::CachedMPSPauliExpectation, expect_Lh, L::Int;
+                                     half_cache1=nothing, half_cache2=nothing,
+                                     n_steps=10^5, n_warmup=10^4,
+                                     seed::UInt32=UInt32(0xC0FFEE),
+                                     progress_every=max(1, n_steps ÷ 10))
+    @assert iseven(L)
+    Lh = L ÷ 2
+    rng = MersenneTwister(seed)
+    set_pauli_string!(full_cache, zeros(Int, L))
+    half_cache1 !== nothing && set_pauli_string!(half_cache1, zeros(Int, Lh))
+    half_cache2 !== nothing && set_pauli_string!(half_cache2, zeros(Int, Lh))
+
+    cur_v = cached_pauli_value(full_cache)
+    cur_w = abs(cur_v)^4 / 2.0^L
+    proposal_name = "paper_multiply_Zi_or_XiXj"
+    multiply_Z(old::Int) = old ⊻ 3
+    multiply_X(old::Int) = old ⊻ 1
+    @assert time_reversal_allowed(full_cache.p)
+
+    accum_R = 0.0
+    n_acc = 0
+    n_R = 0
+    block_size = max(1_000, n_steps ÷ 100)
+    block_means = Float64[]
+    cur_block_sum = 0.0
+    cur_block_idx = 0
+    p1 = zeros(Int, Lh)
+    p2 = zeros(Int, Lh)
+
+    function set_half_site!(site::Int, code::Int)
+        if half_cache1 !== nothing
+            if site <= Lh
+                set_cached_pauli!(half_cache1, site, code)
+            else
+                set_cached_pauli!(half_cache2, site - Lh, code)
+            end
+        end
+        return nothing
+    end
+
+    function half_values()
+        if half_cache1 !== nothing
+            return cached_pauli_value(half_cache1), cached_pauli_value(half_cache2)
+        end
+        @inbounds for k in 1:Lh
+            p1[k] = full_cache.p[k]
+            p2[k] = full_cache.p[k + Lh]
+        end
+        return expect_Lh(p1), expect_Lh(p2)
+    end
+
+    for step in 1:(n_warmup + n_steps)
+        proposal_kind = rand(rng) < 0.5 ? :single : :two
+        if proposal_kind == :single
+            i = rand(rng, 1:L)
+            new_i = multiply_Z(full_cache.p[i])
+            allowed = time_reversal_allowed_after(full_cache.p, i, new_i)
+            new_v = allowed ? cached_candidate_value(full_cache, i, new_i) : cur_v
+            j = 0; new_j = 0
+        else
+            i = rand(rng, 1:L); j = rand(rng, 1:(L-1)); j >= i && (j += 1)
+            new_i = multiply_X(full_cache.p[i])
+            new_j = multiply_X(full_cache.p[j])
+            allowed = time_reversal_allowed_after(full_cache.p, i, new_i, j, new_j)
+            new_v = allowed ? cached_candidate_value(full_cache, i, new_i, j, new_j) : cur_v
+        end
+
+        new_w = abs(new_v)^4 / 2.0^L
+        ratio = (cur_w == 0 && new_w == 0) ? 0.0 : (cur_w == 0 ? Inf : new_w / cur_w)
+        if allowed && rand(rng) < ratio
+            if proposal_kind == :single
+                set_cached_pauli!(full_cache, i, new_i)
+                set_half_site!(i, new_i)
+            else
+                set_cached_paulis!(full_cache, i, new_i, j, new_j)
+                set_half_site!(i, new_i)
+                set_half_site!(j, new_j)
+            end
+            cur_v = new_v; cur_w = new_w; n_acc += 1
+        end
+
+        if step > n_warmup
+            v1, v2 = half_values()
+            denom = abs(cur_v)^4
+            if denom > 0
+                R = (abs(v1)^4 * abs(v2)^4) / denom
+                accum_R += R
+                n_R += 1
+                cur_block_sum += R
+                cur_block_idx += 1
+                if cur_block_idx == block_size
+                    push!(block_means, cur_block_sum / block_size)
+                    cur_block_sum = 0.0; cur_block_idx = 0
+                end
+                if n_R % progress_every == 0
+                    mean_R_now = accum_R / n_R
+                    @printf("      [%s cached sample %d/%d] c_L=%+.6f mean_R=%.6e accept=%.4f blocks=%d\n",
+                            proposal_name, n_R, n_steps, -log(mean_R_now), mean_R_now,
+                            n_acc / step, length(block_means))
+                    flush(stdout)
+                end
+            end
+        end
+    end
+
+    mean_R = accum_R / n_R
+    se_R = length(block_means) > 1 ? std(block_means) / sqrt(length(block_means)) : NaN
+    cL = -log(mean_R)
+    se_cL = se_R / mean_R
+    accept = n_acc / (n_warmup + n_steps)
+    backend = half_cache1 === nothing ? "mps_cached_env_full_ed_half" : "mps_cached_env"
+    return (cL=cL, se=se_cL, accept=accept, mean_R=mean_R, se_R=se_R,
+            proposal=proposal_name, block_size=block_size, n_recorded=n_R,
+            expectation_backend=backend)
 end
 
 # ---------------- Exact-sum SRE (anchor at L_min) ----------------
@@ -271,12 +650,17 @@ function compute_cL_cell(L::Int, h::Float64; chi=30, n_steps=10^5, n_warmup=10^4
     @assert iseven(L) && L ≥ 4
     Lh = L ÷ 2
 
+    full_cache = nothing
+    half_cache1 = nothing
+    half_cache2 = nothing
+
     # Ground state at L (for sampling distribution and denominator).
     if L ≤ 8
         E_L, psi_L = ed_groundstate(L, h; pbc=pbc)
         expect_L = (q) -> ed_pauli_expectation(psi_L, q, L)
     else
         E_L, psi_L_mps, sites_L = dmrg_groundstate(L, h, chi; pbc=pbc)
+        full_cache = CachedMPSPauliExpectation(psi_L_mps, sites_L)
         expect_L = (q) -> mps_pauli_expectation(psi_L_mps, q, sites_L)
     end
 
@@ -286,14 +670,24 @@ function compute_cL_cell(L::Int, h::Float64; chi=30, n_steps=10^5, n_warmup=10^4
         expect_Lh = (q) -> ed_pauli_expectation(psi_Lh, q, Lh)
     else
         E_Lh, psi_Lh_mps, sites_Lh = dmrg_groundstate(Lh, h, chi; pbc=pbc)
+        half_cache1 = CachedMPSPauliExpectation(psi_Lh_mps, sites_Lh)
+        half_cache2 = CachedMPSPauliExpectation(psi_Lh_mps, sites_Lh)
         expect_Lh = (q) -> mps_pauli_expectation(psi_Lh_mps, q, sites_Lh)
     end
 
     seed = UInt32(0xC0FFEE) + UInt32(seed_offset & 0xFFFF)
-    res = pauli_markov_cL_eq24(expect_L, expect_Lh, L;
-                                n_steps=n_steps, n_warmup=n_warmup, seed=seed)
+    res = if full_cache === nothing
+        pauli_markov_cL_eq24(expect_L, expect_Lh, L;
+                             n_steps=n_steps, n_warmup=n_warmup, seed=seed)
+    else
+        pauli_markov_cL_eq24_cached(full_cache, expect_Lh, L;
+                                    half_cache1=half_cache1, half_cache2=half_cache2,
+                                    n_steps=n_steps, n_warmup=n_warmup, seed=seed)
+    end
     return (cL=res.cL, se=res.se, accept=res.accept, mean_R=res.mean_R,
-            E_L=E_L, E_Lh=E_Lh)
+            E_L=E_L, E_Lh=E_Lh, proposal=res.proposal,
+            block_size=res.block_size, n_recorded=res.n_recorded,
+            expectation_backend=res.expectation_backend)
 end
 
 # ---------------- Main: h-scan × L-scan ----------------
@@ -302,6 +696,7 @@ function main()
     Random.seed!(0xBADC0FFE)
     pbc   = true
     L_min = 8
+    provenance = reproduction_provenance()
 
     # Per-cell SLURM mode: when FIG4_CELL_L and FIG4_CELL_H are set, run only
     # that cell. Stage 3 (increment recursion) is skipped — the aggregator
@@ -361,7 +756,7 @@ function main()
     end
 
     # Stage 2: c_L for each (L, h) via Eq.-(24) chain.
-    println("\n############ Stage 2: c_L via Eq.-(24) ratio chain (single-chain, polynomial variance) ############")
+    println("\n############ Stage 2: c_L via cached Eq.-(24) ratio-chain diagnostic ############")
     flush(stdout)
     cL_data = Dict{Tuple{Int,Float64}, Float64}()
     cL_err  = Dict{Tuple{Int,Float64}, Float64}()
@@ -383,14 +778,25 @@ function main()
         accept_all[(L, h)] = res.accept
         @printf("    c_L = %+.5f ± %.5f   (mean_R=%.4e, accept=%.2f, %.1f s)\n",
                 res.cL, res.se, res.mean_R, res.accept, dt)
+        manifest_path = joinpath(cell_dir, @sprintf("manifest_L%d_h%.2f.json", L, h))
         cell_record = Dict(
             "L"=>L, "h"=>h, "cL"=>res.cL, "se"=>res.se,
             "mean_R"=>res.mean_R, "accept"=>res.accept,
             "E_L"=>res.E_L, "E_Lh"=>res.E_Lh, "wall_seconds"=>dt,
             "n_steps"=>n_steps, "chi"=>chi, "pbc"=>pbc, "L_min"=>L_min,
+            "proposal"=>res.proposal, "block_size"=>res.block_size,
+            "n_recorded"=>res.n_recorded,
+            "expectation_backend"=>res.expectation_backend,
+            "protocol_hash"=>provenance["protocol_hash"],
+            "script_hash"=>provenance["script_hash"],
+            "script_path"=>provenance["script_path"],
+            "sources"=>provenance["sources"],
+            "claims"=>provenance["claims"],
+            "deviations"=>provenance["deviations"],
+            "artifacts"=>Dict("manifest"=>manifest_path, "script"=>SCRIPT_PATH),
             "M2_anchor_at_L_min"=>M2_anchor[h])
+        validate_compute_manifest!(cell_record, manifest_path)
         push!(cell_log, cell_record)
-        manifest_path = joinpath(cell_dir, @sprintf("manifest_L%d_h%.2f.json", L, h))
         open(manifest_path, "w") do f
             JSON.print(f, cell_record, 2)
         end
@@ -435,7 +841,7 @@ function main()
     Ls_full = [L_min; Ls_chain...]
     combined = Dict(
         "model"   => "1D TFIM",
-        "estimator" => "Eq.-(24) ratio chain (paper-grade)",
+        "estimator" => "cached Eq.-(24) ratio-chain diagnostic",
         "L_min"   => L_min,
         "Ls_chain" => Ls_chain,
         "Ls_full" => Ls_full,
@@ -443,6 +849,13 @@ function main()
         "chi"     => chi,
         "n_steps" => n_steps,
         "pbc"     => pbc,
+        "expectation_backends" => sort(unique([string(c["expectation_backend"]) for c in cell_log])),
+        "protocol_hash" => provenance["protocol_hash"],
+        "script_hash" => provenance["script_hash"],
+        "script_path" => provenance["script_path"],
+        "sources" => provenance["sources"],
+        "claims" => provenance["claims"],
+        "deviations" => provenance["deviations"],
         "M2_anchor" => Dict(string(h) => M2_anchor[h] for h in h_grid),
         "cells"   => cell_log,
         "c_L"     => Dict(string(L) => [cL_data[(L, h)]  for h in h_grid] for L in Ls_chain),
@@ -457,12 +870,12 @@ function main()
     println("\nSaved → $(joinpath(outdir, "data.json"))")
     flush(stdout)
 
-    # ---------------- Plots: 2-panel Fig 4 reproduction (paper-grade estimator) ----------------
+    # ---------------- Plots: 2-panel Fig 4 diagnostic ----------------
     palette = [:steelblue, :firebrick, :seagreen, :darkorange]
 
     # Panel (a): c_L vs h
     pa = plot(xlabel="h", ylabel="c_L = 2 M_2(L/2) − M_2(L)",
-              title="Fig 4(a) — Eq.-(24) ratio chain (paper-grade estimator)",
+              title="Fig 4(a) — cached Eq.-(24) ratio-chain diagnostic",
               xticks=h_grid, legend=:topright)
     for (k, L) in enumerate(Ls_chain)
         cs   = [cL_data[(L, h)]  for h in h_grid]
@@ -476,7 +889,7 @@ function main()
 
     # Panel (b): m_2 vs h
     pb = plot(xlabel="h", ylabel="m_2 = M_2 / L",
-              title="Fig 4(b) — m_2 via increment recursion (paper-grade)",
+              title="Fig 4(b) — m_2 via increment recursion (diagnostic)",
               xticks=h_grid, legend=:topright)
     for (k, L) in enumerate(Ls_full)
         m2s    = [M2_grid[(L, h)] / L for h in h_grid]

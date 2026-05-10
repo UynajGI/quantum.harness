@@ -31,12 +31,12 @@ The array interface is generic: the submitted script receives `HARNESS_RUN_SPEC=
 2. **Partition selection — probe queue, then ratify with user via Superpowers fork**: before submit, never silently default to the cluster profile's `default-cpu` row. Read the calling skill's resource-class hint (cpu / gpu / high-mem), filter candidate partitions from the profile table, then probe live queue load via `ssh <alias> 'sinfo -o "%P %a %.10l %.6D %.6t"'` (or the cluster profile's status command). Present 2–3 candidates to the user via `AskUserQuestion` — recommended option first, each option with: partition name, current load (idle/mix/alloc/down node counts), cores/memory specs, expected queue wait, one-line pro / con. The user ratifies. Defaults are not free; an idle high-core partition can be a free win, and a congested default-cpu partition can be a hidden multi-hour wait. Per AGENTS.md "warm-clear-concise UX rule".
 3. **First-run bootstrap** (only if needed; idempotent):
    - Test if `<repo_path_remote>` exists on cluster. If not, `git clone` per the profile's `bootstrap_one_time` snippet.
-   - Test if `<repo>/julia-env/Manifest.toml` is instantiated (use `tools/cli/setup-julia.sh verify <repo>/julia-env <smoke-pkg>` via ssh — exit code 0 means ready). If not, dispatch `/setup-julia --target remote:<alias>` to install Julia (per `bootstrap_one_time`'s module-load or juliaup recipe), configure mirror per profile's `region`, and run `Pkg.instantiate()`.
-   - If the cluster's `bootstrap_one_time` declares cluster-specific quirks beyond Julia (license server, depot path, etc.), run them once, write a `~/.harness-bootstrapped` marker on the cluster.
+   - Run the setup check required by the submitted command and the cluster profile. For Julia commands, use `tools/cli/setup-julia.sh verify <repo>/julia-env <smoke-pkg>` and dispatch `/setup-julia --target remote:<alias>` if it fails. For other stacks, use the declared setup primitive or command-specific smoke check; `/slurm` does not invent language setup.
+   - If the cluster's `bootstrap_one_time` declares cluster-specific quirks (license server, module load, depot/cache path, etc.), run them once, write a `~/.harness-bootstrapped` marker on the cluster.
 4. **Ship**:
    - `git`: stage and commit if working tree dirty (only with user authorization for this run); `git push origin <branch>`; `ssh <alias> "cd <repo> && git fetch && git checkout <branch> && git pull"`.
    - `rsync`: `rsync -avz --exclude='/results' --exclude='/.git' . <alias>:<repo>/`.
-5. **Submit**: `ssh <alias> "cd <repo> && sbatch <script>"` (with the partition picked in step 2). Capture job id. For array jobs, the run spec is rsynced first and `sbatch --array=1-N --export=ALL,HARNESS_RUN_SPEC=<path>,HARNESS_ENTRYPOINT=<script> ...` supplies the generic cell selector.
+5. **Submit**: `ssh <alias> "cd <repo> && sbatch <script>"` (with the partition picked in step 2). Capture job id. For array jobs, the run spec is rsynced first and `sbatch --array=1-N --export=ALL,HARNESS_RUN_SPEC=<path>,HARNESS_COMMAND='<command>' ...` supplies the generic cell selector and command. `HARNESS_ENTRYPOINT=<script>` remains a convenience fallback for executable scripts and Julia entrypoints.
 6. **Monitor**: poll `ssh <alias> "squeue -j <jobid> -h -o '%T %M %R'"`. **Critical first check — settle-time within 1–3 min of submit**: tail at least one cell's log to confirm actual compute is happening, not just "RUNNING" status. Sbatch can start a cell, hit a startup error (wrong PATH, missing module, OOM-at-init, broken sbatch.sh), and exit within seconds — but the cell may briefly show RUNNING before flipping to FAILED/COMPLETED. Catching this early prevents a fire-and-forget failure across the whole grid. Per AGENTS.md "Monitor before declaring success". After the early settle, periodically poll for state transitions (PENDING → RUNNING → COMPLETED/FAILED) and tail one log every 30–60 min for multi-hour jobs.
 
    **Utilization check (thread-level, NOT process-level)**: when checking "is the job actually using its allocated cores", a single `top` snapshot showing `%CPU = 100` from the process row is **not** a utilization measurement — that's one thread's instantaneous CPU on one core, which a multi-threaded process can saturate even when 7/8 cores are idle. The right inspection on the compute node is:
@@ -64,7 +64,7 @@ Schema is declared in `tools/cluster/README.md`. This skill consults:
 - **Scheduler**: `scheduler.type` (only `slurm` for this skill), `scheduler.default_queue`.
 - **Partitions table** — picks the row by `class` (`default-cpu`, `gpu`, `high-mem`, …) per the calling skill's resource-class hint.
 - **Network**: `internet.from_login` (decides `git clone` vs pre-staged tarball ship), `internet.from_compute` (decides whether package install can happen during a job).
-- **Region** — passed to `/setup-julia` (or other language-setup skills) for mirror defaults.
+- **Region** — passed to the relevant language-setup skill for mirror defaults.
 - **`bootstrap_one_time`** — shell snippet for cluster-specific one-time setup (clone, module load, env setup). Run on first cluster use; marker file `~/.harness-bootstrapped` records completion.
 - **Sbatch idioms** — single-cell and array-job templates.
 - **Status / queue commands** — `squeue` / `sacct` dialect.
@@ -82,7 +82,7 @@ If no profile is found, the skill emits the generic array wrapper without resour
 
 - `/parameter-scan` calls `/slurm` once with an array of cells when the user is sweeping on a cluster.
 - `/reproduce-paper` calls `/slurm` for any cluster step in the figure pipeline.
-- `/setup-julia` is dispatched by `/slurm`'s first-run bootstrap when the cluster's `julia-env/Manifest.toml` isn't instantiated yet.
+- Language setup is dispatched by `/slurm`'s first-run bootstrap only when the submitted command requires it and the profile/check says the environment is not ready.
 - `/onboard` populates the cluster profile this skill reads.
 - Manifest schema is per-method-card convention; the writeup-handoff close in `/reproduce-paper` consumes them at session close.
 

@@ -61,7 +61,7 @@ runner = "tools/cli/harness_validate_numeric.jl"
 
 Selectors may use `field = "nested.key"` for simple JSON/TOML paths or `pointer = "/nested/0/key"` for JSON Pointer. Names like `observable`, `observable_exact`, or `stderr` are example payload fields, not harness-level types.
 
-For manifest assembly, a run spec may include `assembly.manifest_contract` with only generic clauses: `required_fields`, `nonempty_fields`, `equals`, `list_contains`, `numeric_fields`, `optional_numeric_fields`, `numeric_bounds`, and `evidence_sets`. These clauses refer to manifest field paths; they do not introduce domain types. A Fig.4 run may require `deviations` to contain `estimator:born-direct-replaces-eq24`, but the reusable contract is still just "list field contains value".
+For manifest assembly, a run spec may include `assembly.manifest_contract` with only generic clauses: `required_fields`, `nonempty_fields`, `equals`, `list_contains`, `numeric_fields`, `optional_numeric_fields`, `numeric_bounds`, and `evidence_sets`. These clauses refer to manifest field paths; they do not introduce domain types. If a run must declare a method difference, express it as payload data such as "list field contains declared deviation id"; do not add a Hamiltonian, sampler, boundary-condition, or paper-specific oracle type to the reusable contract.
 
 ## Workflow
 
@@ -77,7 +77,7 @@ Steps 1–8 build and validate the complete protocol; steps 9–13 are the pre-c
    - **Substantive** — a physics result the paper is built around (e.g., a phase diagram, a critical exponent, an order parameter).
    - **Methodology** — illustrates how the calculation works (e.g., a partition schematic, a sampling-tree diagram, a noise-model cartoon).
    - **Verification** — a convergence diagnostic the paper itself ran (e.g., bond-dim convergence, autocorrelation time, finite-size trend). These are *internal* to the paper's verification chain; reproducing them is also reproducing the paper's *trust*.
-   - **Cross-check** — a comparison to a competing diagnostic (e.g., magic vs Binder cumulant, deterministic vs stochastic estimator).
+   - **Cross-check** — a comparison to an independent method, estimator, or diagnostic for the same claim.
 
 4. **Plan the figure dependency graph.** Identify which figures share generated artifacts, so the underlying calculation can be reused. Output: `results/<run>/reproduce-paper.plan.json` with figure ids, their categorizations, the artifact each requires, and the dependency edges.
 
@@ -137,7 +137,7 @@ The skill uses these heuristics when the paper's `INDEX.md` does not pre-tag the
 - *Substantive*: caption mentions a phase, a transition, an exponent, an order parameter, a phase diagram, or a quantitative claim.
 - *Methodology*: caption is a "schematic", "diagram", "cartoon", "illustration", or describes the algorithm itself.
 - *Verification*: caption mentions "convergence", "vs `χ`", "vs `N_S`", "autocorrelation", "finite-size", "Trotter", or any numerical-stability diagnostic.
-- *Cross-check*: caption compares two methods (DMRG vs ED, magic vs Binder, exact vs sampled, etc.) on the same problem.
+- *Cross-check*: caption compares two methods, estimators, or diagnostics on the same problem.
 
 When ambiguous, ask the user via `AskUserQuestion` with the closest 2–3 categorizations.
 
@@ -150,7 +150,7 @@ Per AGENTS.md output norms, reports stay terse — but paper reproduction has a 
 | One figure per substantive figure in the paper | `results/<run>/figs/fig-<id>.png` | Always. |
 | Convergence-diagnostic plot per substantive calculation (the AGENTS.md norm) | `results/<run>/figs/convergence-<calc>.png` | Always. |
 | Verification figures the paper ran | `results/<run>/figs/verification-<id>.png` | Always (unless paper does not declare them). |
-| Cross-check figures (e.g., magic-vs-Binder) | `results/<run>/figs/cross-<id>.png` | When the secondary diagnostic is in the harness. |
+| Cross-check figures | `results/<run>/figs/cross-<id>.png` | When the secondary diagnostic is in the harness. |
 | Methodology figures (schematics) | `results/<run>/figs/method-<id>.png` | When derivable; otherwise paper-citation note. |
 | Protocol contract | `results/<run>/protocol.toml` | Always before compute. |
 | Per-cell / per-figure manifest | `results/<run>/cells/<cell_id>/manifest.json`, `results/<run>/manifests/fig-<id>.json` | Always. |
@@ -181,7 +181,7 @@ The orchestrator's value is in the *plan* (the dependency graph + methodology/ve
 
 ## Notes
 
-- This skill is *paper-agnostic*: any paper with an `INDEX.md` and a recognizable model + method coverage can be run through it. It is not magic-paper-specific.
+- This skill is *paper-agnostic*: any paper with an `INDEX.md` and recognizable model + method coverage can be run through it. It is not specific to any one paper, model, or diagnostic.
 - For papers covering models out of harness scope, the plan stage surfaces the gap and offers (a) a partial-coverage run, (b) escalation to `arxiv-search` for related papers in scope, or (c) cancellation.
 - Methodology absorption (the Pragmatist's blind spot) is the *purpose* of this skill — emitting verification and methodology figs alongside substantive ones is what distinguishes paper reproduction from a `solve`-loop chain. A user who asked for the "main result" gets the result *plus* the verification anchors that earn the result.
 - Per AGENTS.md "Writeup handoff", the consolidated script + independently reviewed run report is the close of this skill (Steps 16–17); the user can route to `scientific-writing` / `latex-paper-en` / `scientific-visualization` / `jupyter-notebook` for downstream artifacts.

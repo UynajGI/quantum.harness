@@ -38,7 +38,7 @@ using SHA
 
 include(joinpath(@__DIR__, "..", "tools", "cli", "harness_cell_config.jl"))
 include(joinpath(@__DIR__, "..", "tools", "cli", "harness_manifest_evidence.jl"))
-include(joinpath(@__DIR__, "..", "tools", "cli", "harness_mps_stateprep.jl"))
+include(joinpath(@__DIR__, "..", "tools", "cli", "itensors_mps_stateprep.jl"))
 include(joinpath(@__DIR__, "..", "tools", "cli", "pauli_mps_sampler.jl"))
 
 const SCRIPT_PATH = normpath(@__FILE__)
@@ -126,7 +126,7 @@ function dmrg_groundstate(L, h, chi; cutoff=1e-12, nsweeps=30, pbc::Bool=true,
                           initial_state=nothing)
     sites = siteinds("S=1/2", L; conserve_qns=false)
     H = build_tfim(sites, h; pbc=pbc)
-    psi0 = harness_initial_mps(sites, initial_state; default_linkdims=4)
+    psi0 = itensors_mps_initial_state(sites, initial_state; default_linkdims=4)
     sched = vcat(fill(min(10, chi), 4), fill(chi, nsweeps - 4))
     energy, psi = dmrg(H, psi0; nsweeps=nsweeps, maxdim=sched, cutoff=cutoff, outputlevel=0)
     return energy, psi, sites

@@ -1,6 +1,6 @@
 using ITensors, ITensorMPS
 
-function harness_product_state_labels(product_state, L::Int)
+function itensors_mps_product_state_labels(product_state, L::Int)
     if product_state isa AbstractString
         return fill(string(product_state), L)
     elseif product_state isa AbstractVector
@@ -20,7 +20,7 @@ function harness_product_state_labels(product_state, L::Int)
     error("Product state must be a string, label list, or object with repeat/states")
 end
 
-function harness_complex_coefficient(x)
+function itensors_mps_complex_coefficient(x)
     x isa Real && return ComplexF64(x)
     if x isa AbstractVector
         length(x) == 2 || error("Complex coefficient vector must be [real, imag]")
@@ -29,7 +29,7 @@ function harness_complex_coefficient(x)
     error("Coefficient must be real or [real, imag]")
 end
 
-function harness_initial_mps(sites, spec=nothing; default_linkdims::Int=4)
+function itensors_mps_initial_state(sites, spec=nothing; default_linkdims::Int=4)
     if spec === nothing
         return randomMPS(sites; linkdims=default_linkdims)
     end
@@ -43,7 +43,7 @@ function harness_initial_mps(sites, spec=nothing; default_linkdims::Int=4)
     end
 
     if haskey(spec, "product_state")
-        return productMPS(sites, harness_product_state_labels(spec["product_state"], length(sites)))
+        return productMPS(sites, itensors_mps_product_state_labels(spec["product_state"], length(sites)))
     end
 
     terms = spec["terms"]
@@ -52,9 +52,9 @@ function harness_initial_mps(sites, spec=nothing; default_linkdims::Int=4)
     psi = nothing
     for term in terms
         term isa AbstractDict || error("Each initial-state term must be an object")
-        labels = harness_product_state_labels(term["product_state"], length(sites))
+        labels = itensors_mps_product_state_labels(term["product_state"], length(sites))
         term_mps = productMPS(sites, labels)
-        coeff = harness_complex_coefficient(get(term, "coefficient", 1.0))
+        coeff = itensors_mps_complex_coefficient(get(term, "coefficient", 1.0))
         term_mps[1] = coeff * term_mps[1]
         psi = psi === nothing ? term_mps : psi + term_mps
     end

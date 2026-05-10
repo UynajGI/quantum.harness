@@ -5,7 +5,7 @@ description: Use when the user wants to sweep one or more parameter axes (Hamilt
 
 # parameter-scan
 
-Sweep a Cartesian product of parameter axes — single-axis (1D scan) or multi-axis (`(L, h)`, `(χ, N_S)`, `(U/t, doping)`, …) — for a single observable, holding other parameters fixed. Produces a structured grid-indexed result, an auto-generated plot, a feature-detection label, and a brief report.
+Sweep a Cartesian product of parameter axes — single-axis or multi-axis — for a single observable, holding other parameters fixed. Produces a structured grid-indexed result, an auto-generated plot, shape labels, and a brief report.
 
 This primitive subsumes the previous `/finite-size-scan` (which is just `/parameter-scan` with `L` as the size axis).
 
@@ -36,8 +36,8 @@ This primitive subsumes the previous `/finite-size-scan` (which is just `/parame
 6. **Auto-plot**: emit one or more plots via `scientific-visualization` based on axis arity:
    - 1D: `observable(parameter)` line plot with error bars.
    - 2D: family of `observable(axis_1)` curves indexed by `axis_2` (or vice versa); plus an optional `observable(axis_1, axis_2)` heatmap when both axes are continuous.
-7. **Feature detection** (auto labels — see below).
-8. **Hand back**: table + plot + feature label list to the calling skill (or `solve`).
+7. **Shape detection** (auto labels — see below).
+8. **Hand back**: table + plot + shape label list to the calling skill (or `solve`).
 
 ## Cell Spec Contract
 
@@ -63,19 +63,19 @@ If the caller needs stricter assembly gates, `run_spec.json` may carry `assembly
 
 Assemblers must validate each manifest's `settings` against the merged shared+cell settings from `run_spec.json`, then report settings as constant vs varying across cells. Never treat the first manifest's settings as global provenance unless `assembly.consensus_fields` declares and passes that invariant.
 
-## Feature detection (auto labels)
+## Shape detection (auto labels)
 
-The skill labels what it found on the data:
+The skill labels only the shape of the data:
 
 - **Monotone** — observable goes one direction across an axis range.
-- **Asymptoting** (size-axis-aware) — successive size-differences shrink monotonically; thermodynamic-limit extrapolation is sensible.
-- **Critical-like** (size-axis-aware) — power-law-looking growth or decay with `L`; flag for `/scaling-fit`.
-- **Drifting / oscillating** (size-axis-aware) — neither asymptoting nor a clean power-law; surface the failure mode (insufficient sizes, χ too small, wrong sector).
-- **Extremum** — peak or valley at an interior point on a parameter axis. Often a critical-point indicator.
-- **Crossing** (multi-axis) — curves at different size cross at one parameter value. Binder-cumulant-like diagnostic for transitions.
-- **Discontinuity-like step** — sharp jump suggesting a first-order transition or a sector / convergence problem; flag for follow-up.
+- **Asymptoting** — successive differences along a declared axis shrink monotonically; an extrapolation check may be appropriate.
+- **Power-law-like size trend** — log-log slope is approximately stable across a declared size axis; pass to `/scaling-fit` if the calling skill needs exponents.
+- **Drifting / oscillating** — neither asymptoting nor a clean power-law-like trend; surface the unresolved shape and the controlling settings.
+- **Extremum** — peak or valley at an interior point on an axis.
+- **Crossing** — curves indexed by one axis cross at one value of another axis.
+- **Step-like** — a sharp jump relative to neighboring points; flag for follow-up.
 
-Labels are descriptive, not interpretive. The calling skill (e.g., `physics/criticality`, `physics/magic`, `physics/confinement`) interprets the label.
+Labels are descriptive, not interpretive. The calling skill decides whether a shape means a transition, a finite-size artifact, a sector/setup problem, or something else.
 
 ## Output
 
@@ -83,7 +83,7 @@ Labels are descriptive, not interpretive. The calling skill (e.g., `physics/crit
 - `results/<run>/cells/<cell_id>/manifest.json` — per-cell manifest (one per cell).
 - `results/<run>/parameter-scan.csv` — assembled grid table.
 - `results/<run>/parameter-scan.png` — auto-generated plot(s).
-- A 2-3-line report: feature label(s), recommended next step.
+- A 2-3-line report: shape label(s), recommended next step.
 - `scripts/<run>/parameter-scan.jl` — reproducible script.
 
 ## Resume semantics
@@ -97,7 +97,7 @@ Labels are descriptive, not interpretive. The calling skill (e.g., `physics/crit
 - For embarrassingly-parallel cluster sweeps, this skill composes with `/slurm` (which submits the sbatch array job + monitors + fetches). The user does not call `/slurm` directly for grids; `/parameter-scan` handles the cell decomposition and delegates.
 - 2D `(L, parameter)` grids feed `/scaling-fit` for finite-size collapse and exponent extraction.
 - Common follow-ups (offered via `AskUserQuestion`):
-  - `/scaling-fit` (Recommended for critical-like / extremum / crossing labels).
+  - `/scaling-fit` (Recommended for power-law-like / extremum / crossing labels when the calling skill needs scaling).
   - `/cross-method-check` — independent confirmation at one cell.
   - Done.
 

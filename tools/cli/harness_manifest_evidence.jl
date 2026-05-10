@@ -85,11 +85,177 @@ end
 
 function harness_validate_evidence_against_declarations(evidence, declarations)
     declared = harness_declaration_lookup(declarations)
-    harness_validate_evidence(evidence; required_ids=collect(keys(declared)))
+    evidence isa AbstractVector || error("Evidence must be a list")
+    seen = Set{String}()
     for item in evidence
+        item isa AbstractDict || error("Every evidence item must be an object")
+        haskey(item, "id") || error("Every evidence item must have an id")
         id = string(item["id"])
+        id in seen && error("Duplicate evidence id '$id'")
+        push!(seen, id)
         haskey(declared, id) || error("Evidence item '$id' has no declaration")
-        harness_metadata_matches(item, declared[id])
+        declaration = declared[id]
+        harness_metadata_matches(item, declaration)
+        for key in ("expected", "expected_abs", "tolerance")
+            haskey(item, key) || continue
+            haskey(declaration, key) ||
+                error("Evidence item '$id' declares '$key' but the declaration does not")
+            item[key] == declaration[key] ||
+                error("Evidence item '$id' $key=$(item[key]) does not match declaration $(declaration[key])")
+        end
+        bound = Dict{String,Any}(string(k) => v for (k, v) in item)
+        for key in ("expected", "expected_abs", "tolerance")
+            if haskey(declaration, key)
+                bound[key] = declaration[key]
+            end
+        end
+        harness_validate_evidence_item(bound)
+    end
+    for id in keys(declared)
+        id in seen || error("Missing required evidence id '$id'")
+    end
+    return true
+end
+
+function harness_manifest_path_tokens(field::AbstractString)
+    isempty(field) && error("Manifest field path cannot be empty")
+    return split(field, ".")
+end
+
+function harness_manifest_lookup(record, field::AbstractString)
+    value = record
+    for token in harness_manifest_path_tokens(field)
+        if value isa AbstractDict && haskey(value, token)
+            value = value[token]
+        else
+            return false, nothing
+        end
+    end
+    return true, value
+end
+
+function harness_manifest_required(record, field::AbstractString, path::AbstractString)
+    found, value = harness_manifest_lookup(record, field)
+    found || error("Manifest missing required field '$field': $path")
+    return value
+end
+
+function harness_manifest_nonempty_value(value)
+    value === nothing && return false
+    value isa AbstractString && return !isempty(strip(value))
+    value isa AbstractVector && return !isempty(value)
+    value isa AbstractDict && return !isempty(value)
+    return true
+end
+
+function harness_manifest_contract_list(contract::AbstractDict, key::AbstractString)
+    value = get(contract, key, Any[])
+    value isa AbstractVector || error("Manifest contract '$key' must be a list")
+    return value
+end
+
+function harness_manifest_numeric(record, field::AbstractString, path::AbstractString)
+    value = harness_manifest_required(record, field, path)
+    number = harness_evidence_float(value, field)
+    isfinite(number) || error("Manifest numeric field '$field' is not finite: $path")
+    return number
+end
+
+function harness_manifest_bound_value(record, bound::AbstractDict, key::AbstractString, path::AbstractString)
+    field_key = "$(key)_field"
+    if haskey(bound, field_key)
+        return harness_manifest_numeric(record, string(bound[field_key]), path)
+    end
+    haskey(bound, key) || error("Manifest numeric bound '$(get(bound, "id", "<unnamed>"))' missing '$key' or '$field_key'")
+    number = harness_evidence_float(bound[key], "$(get(bound, "id", "<unnamed>")).$key")
+    isfinite(number) || error("Manifest numeric bound '$(get(bound, "id", "<unnamed>"))' has non-finite '$key'")
+    return number
+end
+
+function harness_manifest_bound_applies(record, bound::AbstractDict)
+    if haskey(bound, "when_present")
+        found, value = harness_manifest_lookup(record, string(bound["when_present"]))
+        return found && value !== nothing
+    end
+    return true
+end
+
+function harness_manifest_compare(lhs::Float64, op::AbstractString, rhs::Float64)
+    op == "<=" && return lhs <= rhs
+    op == ">=" && return lhs >= rhs
+    op == "<" && return lhs < rhs
+    op == ">" && return lhs > rhs
+    op == "==" && return lhs == rhs
+    error("Unsupported manifest numeric bound op '$op'")
+end
+
+function harness_validate_manifest_contract(record::AbstractDict, contract::AbstractDict; path::AbstractString="manifest")
+    for field in harness_manifest_contract_list(contract, "required_fields")
+        harness_manifest_required(record, string(field), path)
+    end
+
+    for field in harness_manifest_contract_list(contract, "nonempty_fields")
+        value = harness_manifest_required(record, string(field), path)
+        harness_manifest_nonempty_value(value) ||
+            error("Manifest field '$(string(field))' is empty: $path")
+    end
+
+    for check in harness_manifest_contract_list(contract, "equals")
+        check isa AbstractDict || error("Manifest contract equals entries must be objects")
+        field = string(check["field"])
+        expected = check["value"]
+        actual = harness_manifest_required(record, field, path)
+        actual == expected ||
+            error("Manifest field '$field'=$(repr(actual)) does not equal $(repr(expected)): $path")
+    end
+
+    for check in harness_manifest_contract_list(contract, "list_contains")
+        check isa AbstractDict || error("Manifest contract list_contains entries must be objects")
+        field = string(check["field"])
+        values = harness_manifest_required(record, field, path)
+        values isa AbstractVector || error("Manifest field '$field' must be a list for list_contains: $path")
+        wanted = check["value"]
+        any(x -> x == wanted, values) ||
+            error("Manifest field '$field' does not contain $(repr(wanted)): $path")
+    end
+
+    for field in harness_manifest_contract_list(contract, "numeric_fields")
+        harness_manifest_numeric(record, string(field), path)
+    end
+
+    for field in harness_manifest_contract_list(contract, "optional_numeric_fields")
+        found, value = harness_manifest_lookup(record, string(field))
+        (!found || value === nothing) && continue
+        number = harness_evidence_float(value, string(field))
+        isfinite(number) || error("Manifest optional numeric field '$(string(field))' is not finite: $path")
+    end
+
+    for bound in harness_manifest_contract_list(contract, "numeric_bounds")
+        bound isa AbstractDict || error("Manifest contract numeric_bounds entries must be objects")
+        harness_manifest_bound_applies(record, bound) || continue
+        id = string(get(bound, "id", "numeric_bound"))
+        lhs = harness_manifest_bound_value(record, bound, "lhs", path)
+        rhs = harness_manifest_bound_value(record, bound, "rhs", path)
+        op = string(get(bound, "op", "<="))
+        harness_manifest_compare(lhs, op, rhs) ||
+            error("Manifest numeric bound '$id' failed: $lhs $op $rhs is false: $path")
+    end
+
+    for evidence_set in harness_manifest_contract_list(contract, "evidence_sets")
+        evidence_set isa AbstractDict || error("Manifest contract evidence_sets entries must be objects")
+        evidence_field = string(evidence_set["evidence_field"])
+        declarations_field = string(evidence_set["declarations_field"])
+        evidence_found, evidence = harness_manifest_lookup(record, evidence_field)
+        declarations_found, declarations = harness_manifest_lookup(record, declarations_field)
+        required = Bool(get(evidence_set, "required", true))
+        if !required && (!evidence_found || !declarations_found ||
+                         !harness_manifest_nonempty_value(evidence) ||
+                         !harness_manifest_nonempty_value(declarations))
+            continue
+        end
+        evidence_found || error("Manifest missing evidence field '$evidence_field': $path")
+        declarations_found || error("Manifest missing evidence declarations field '$declarations_field': $path")
+        harness_validate_evidence_against_declarations(evidence, declarations)
     end
     return true
 end

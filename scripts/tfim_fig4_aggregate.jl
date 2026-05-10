@@ -22,16 +22,37 @@ const PRODUCER_SCRIPT_PATH = normpath(joinpath(@__DIR__, "tfim_fig4_paper_grade.
 const PRODUCER_SCRIPT_HASH = bytes2hex(sha256(read(PRODUCER_SCRIPT_PATH)))
 const DEFAULT_LS_CHAIN = [16, 32, 64, 128]
 const DEFAULT_H_GRID = [0.80, 0.90, 0.95, 1.00, 1.05, 1.10, 1.20]
-const REQUIRED_MANIFEST_FIELDS = [
-    "protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts",
-    "status", "proposal", "proposal_kernel", "estimator", "expectation_backend", "L", "h", "L_min", "chi", "pauli_chi", "pauli_chi_check", "pauli_chi_tol", "n_steps", "pbc", "M2_anchor_at_L_min",
-    "initial_state", "symmetry_checks", "symmetry_evidence",
-]
-const CONSENSUS_FIELDS = [
+const DEFAULT_MANIFEST_CONSENSUS_FIELDS = [
     "protocol_hash", "script_hash", "sources", "claims", "deviations",
     "proposal", "proposal_kernel", "estimator", "L_min", "chi", "pauli_chi", "pauli_chi_check", "pauli_chi_tol", "n_steps", "pbc",
     "initial_state", "symmetry_checks",
 ]
+const DEFAULT_MANIFEST_CONTRACT = Dict{String,Any}(
+    "required_fields" => Any[
+        "protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts",
+        "status", "cell_id", "params", "settings", "proposal", "proposal_kernel",
+        "estimator", "expectation_backend", "L", "h", "L_min", "chi",
+        "pauli_chi", "pauli_chi_check", "pauli_chi_tol", "n_steps", "pbc",
+        "M2_anchor_at_L_min", "initial_state", "symmetry_checks", "symmetry_evidence",
+    ],
+    "nonempty_fields" => Any["protocol_hash", "script_hash", "sources", "claims", "artifacts"],
+    "equals" => Any[
+        Dict("field"=>"status", "value"=>"success"),
+        Dict("field"=>"script_hash", "value"=>PRODUCER_SCRIPT_HASH),
+    ],
+    "numeric_fields" => Any[
+        "cL", "se", "L", "h", "L_min", "chi", "n_steps", "M2_anchor_at_L_min",
+    ],
+    "evidence_sets" => Any[
+        Dict("evidence_field"=>"symmetry_evidence",
+             "declarations_field"=>"symmetry_checks",
+             "required"=>false),
+    ],
+)
+const MANIFEST_CONTRACT_LIST_KEYS = (
+    "required_fields", "nonempty_fields", "equals", "list_contains",
+    "numeric_fields", "optional_numeric_fields", "numeric_bounds", "evidence_sets",
+)
 
 function parse_int_list_env(name::String, default::Vector{Int})
     raw = strip(get(ENV, name, ""))
@@ -45,44 +66,23 @@ function parse_float_list_env(name::String, default::Vector{Float64})
     return [parse(Float64, strip(x)) for x in split(raw, ',') if !isempty(strip(x))]
 end
 
-function require_manifest_provenance(d::AbstractDict, f::String)
-    for field in REQUIRED_MANIFEST_FIELDS
-        haskey(d, field) || error("Manifest missing required field '$field': $f")
+function merged_manifest_contract(extra)
+    extra === nothing && return DEFAULT_MANIFEST_CONTRACT
+    extra isa AbstractDict || error("Run-spec assembly.manifest_contract must be an object")
+    out = Dict{String,Any}()
+    for key in MANIFEST_CONTRACT_LIST_KEYS
+        items = Any[]
+        append!(items, get(DEFAULT_MANIFEST_CONTRACT, key, Any[]))
+        append!(items, get(extra, key, Any[]))
+        isempty(items) || (out[key] = items)
     end
-    !isempty(strip(string(d["protocol_hash"]))) || error("Manifest has empty protocol_hash: $f")
-    !isempty(strip(string(d["script_hash"]))) || error("Manifest has empty script_hash: $f")
-    d["script_hash"] == PRODUCER_SCRIPT_HASH ||
-        error("Manifest script_hash does not match current producer script: $f")
-    d["sources"] isa Vector && !isempty(d["sources"]) || error("Manifest has empty sources: $f")
-    d["claims"] isa Vector && !isempty(d["claims"]) || error("Manifest has empty claims: $f")
-    d["deviations"] isa Vector || error("Manifest deviations must be a list: $f")
+    return out
+end
+
+function require_manifest_provenance(d::AbstractDict, f::String, contract::AbstractDict)
+    harness_validate_manifest_contract(d, contract; path=f)
     d["artifacts"] isa AbstractDict || error("Manifest artifacts must be a table: $f")
     haskey(d["artifacts"], "manifest") || error("Manifest artifacts missing manifest path: $f")
-    d["status"] == "success" || error("Manifest is not success-tagged: $f")
-    backend = string(d["expectation_backend"])
-    (startswith(backend, "mps_cached_") || backend == "pauli_mps_compressed_norm" ||
-     backend == "pauli_mps_born_direct_sampling") ||
-        error("Manifest does not use an accepted MPS expectation backend: $f")
-    d["cL"] isa Real || error("Manifest cL is not numeric: $f")
-    d["se"] isa Real || error("Manifest se is not numeric: $f")
-    if backend in ("pauli_mps_compressed_norm", "pauli_mps_born_direct_sampling")
-        d["pauli_chi_error"] isa Real || error("Manifest missing numeric pauli_chi_error: $f")
-        d["pauli_chi_error"] <= d["pauli_chi_tol"] ||
-            error("Manifest Pauli-MPS compression gate failed: $f")
-        d["se"] >= d["pauli_chi_error"] ||
-            error("Manifest se does not cover Pauli-MPS compression error: $f")
-        if backend == "pauli_mps_born_direct_sampling"
-            any(x -> occursin("Born-direct Pauli-MPS sampling replaces paper TTN/local-Metropolis Eq.-24 sampler", string(x)), d["deviations"]) ||
-                error("Born-direct manifest is missing the required method-deviation record: $f")
-            d["sampling_se"] isa Real || error("Manifest missing numeric sampling_se: $f")
-            d["se"] >= d["sampling_se"] ||
-                error("Manifest se does not cover Born-direct sampling error: $f")
-        end
-        d["symmetry_evidence"] isa Vector && !isempty(d["symmetry_evidence"]) ||
-            error("Manifest missing symmetry evidence for Pauli-MPS norm backend: $f")
-        checks = d["symmetry_checks"]
-        harness_validate_evidence_against_declarations(d["symmetry_evidence"], checks)
-    end
 end
 
 function aggregate_run_context()
@@ -92,17 +92,31 @@ function aggregate_run_context()
             outdir=DEFAULT_OUTDIR,
             cell_dir=joinpath(DEFAULT_OUTDIR, "cells"),
             expected_keys=nothing,
+            expected_cell_ids=nothing,
             spec_path=nothing,
+            manifest_contract=DEFAULT_MANIFEST_CONTRACT,
+            consensus_fields=DEFAULT_MANIFEST_CONSENSUS_FIELDS,
         )
     end
 
     spec, spec_path = loaded
     outdir = string(get(spec, "run_dir", DEFAULT_OUTDIR))
+    assembly = get(spec, "assembly", Dict{String,Any}())
+    assembly isa AbstractDict || error("Run spec field 'assembly' must be an object when present")
+    extra_contract = get(assembly, "manifest_contract", get(spec, "manifest_contract", nothing))
+    consensus_fields = get(assembly, "consensus_fields",
+                           get(spec, "manifest_consensus_fields", DEFAULT_MANIFEST_CONSENSUS_FIELDS))
+    consensus_fields isa Vector || error("Run-spec consensus_fields must be a list")
     spec_cells = get(spec, "cells", Any[])
     spec_cells isa Vector || error("Run spec field 'cells' must be a list")
     expected = Set{Tuple{Int,Float64}}()
+    expected_ids = Set{String}()
     for cell in spec_cells
         cell isa AbstractDict || error("Every run-spec cell must be an object")
+        cell_id = string(get(cell, "cell_id", ""))
+        !isempty(cell_id) || error("Every run-spec cell must carry a nonempty cell_id")
+        cell_id in expected_ids && error("Duplicate run-spec cell_id '$cell_id'")
+        push!(expected_ids, cell_id)
         params = get(cell, "params", nothing)
         params isa AbstractDict || error("Every run-spec cell must carry a params object for this aggregator")
         push!(expected, (harness_get_int(params, "L", nothing),
@@ -112,13 +126,17 @@ function aggregate_run_context()
         outdir=outdir,
         cell_dir=joinpath(outdir, "cells"),
         expected_keys=expected,
+        expected_cell_ids=expected_ids,
         spec_path=spec_path,
+        manifest_contract=merged_manifest_contract(extra_contract),
+        consensus_fields=[string(x) for x in consensus_fields],
     )
 end
 
-function load_cells(cell_dir::AbstractString)
+function load_cells(cell_dir::AbstractString, contract::AbstractDict)
     isdir(cell_dir) || error("No manifest directory $cell_dir — run the per-cell job first.")
     cells = Dict{Tuple{Int,Float64}, Any}()
+    cell_ids = Set{String}()
     manifest_paths = String[]
     for (root, _, files) in walkdir(cell_dir)
         for name in files
@@ -129,14 +147,17 @@ function load_cells(cell_dir::AbstractString)
     end
     for f in manifest_paths
         d = open(f) do io; JSON.parse(io); end
-        require_manifest_provenance(d, f)
+        require_manifest_provenance(d, f, contract)
         d["L"] > d["L_min"] || error("Stale c_L manifest at or below L_min in $f")
+        cell_id = string(d["cell_id"])
+        cell_id in cell_ids && error("Duplicate manifest for cell_id=$cell_id")
+        push!(cell_ids, cell_id)
         L = Int(d["L"])
         h = Float64(d["h"])
         haskey(cells, (L, h)) && error("Duplicate manifest for L=$L h=$h")
         cells[(L, h)] = d
     end
-    return cells
+    return cells, cell_ids
 end
 
 function validate_declared_grid!(cells, Ls_chain::Vector{Int}, h_grid::Vector{Float64})
@@ -156,9 +177,16 @@ function validate_expected_keys!(cells, expected_keys::Set{Tuple{Int,Float64}})
     isempty(extra) || error("Unexpected manifests outside run spec: $(extra)")
 end
 
-function validate_manifest_consensus!(cells)
+function validate_expected_cell_ids!(cell_ids, expected_cell_ids::Set{String})
+    missing = sort(collect(setdiff(expected_cell_ids, cell_ids)))
+    extra = sort(collect(setdiff(cell_ids, expected_cell_ids)))
+    isempty(missing) || error("Missing required manifest cell_ids from run spec: $(missing)")
+    isempty(extra) || error("Unexpected manifest cell_ids outside run spec: $(extra)")
+end
+
+function validate_manifest_consensus!(cells, consensus_fields::Vector{String})
     first_cell = first(values(cells))
-    for field in CONSENSUS_FIELDS
+    for field in consensus_fields
         expected = first_cell[field]
         for ((L, h), d) in cells
             d[field] == expected || error("Manifest consensus failure for '$field' at L=$L h=$h: $(d[field]) != $expected")
@@ -180,7 +208,7 @@ end
 
 function main()
     ctx = aggregate_run_context()
-    cells = load_cells(ctx.cell_dir)
+    cells, cell_ids = load_cells(ctx.cell_dir, ctx.manifest_contract)
     if isempty(cells)
         error("No manifests under $(ctx.cell_dir) — run the per-cell SLURM job first.")
     end
@@ -190,11 +218,12 @@ function main()
         h_grid   = parse_float_list_env("FIG4_EXPECTED_H_GRID", DEFAULT_H_GRID)
         validate_declared_grid!(cells, Ls_chain, h_grid)
     else
+        validate_expected_cell_ids!(cell_ids, ctx.expected_cell_ids)
         validate_expected_keys!(cells, ctx.expected_keys)
         Ls_chain = sort(unique([L for (L, _) in ctx.expected_keys]))
         h_grid = sort(unique([h for (_, h) in ctx.expected_keys]))
     end
-    validate_manifest_consensus!(cells)
+    validate_manifest_consensus!(cells, ctx.consensus_fields)
 
     L_min    = first(values(cells))["L_min"]
     chi      = first(values(cells))["chi"]
@@ -208,10 +237,8 @@ function main()
     estimator = first(values(cells))["estimator"]
     backends = sort(unique([string(d["expectation_backend"]) for d in values(cells)]))
     Ls_full  = [L_min; Ls_chain...]
-    estimator_label = estimator == "pauli_mps_norm" ?
-        "compressed Pauli-MPS normalizer contraction" :
-        (estimator == "pauli_mps_born_direct" ?
-         "Born-direct Pauli-MPS sampling" : "cached Eq.-(24) ratio-chain diagnostic")
+    estimator_label = string(get(first(values(cells)), "estimator_label",
+                                 replace(string(estimator), "_" => " ")))
 
     @printf("Aggregator: L_chain=%s   h_grid=%s   L_min=%d   χ=%d   χ_P=%d→%d   N_S=%d   PBC=%s   proposal=%s/%s   estimator=%s   backends=%s\n",
             string(Ls_chain), string(h_grid), L_min, chi, pauli_chi, pauli_chi_check, n_steps, string(pbc),

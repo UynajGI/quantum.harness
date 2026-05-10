@@ -59,6 +59,8 @@ The primitive treats `params` and `settings` as data, not schema. It never knows
 
 Method setup that affects correctness — target sector, initial-state construction, constraints, proposal family, or convergence knobs — also belongs in `settings` as opaque payload. The entrypoint must echo the payload it actually used into each manifest and emit machine-readable evidence for any declared constraint it verifies. `/parameter-scan` only checks presence/freshness and assembles cells; it does not hardcode physics-specific setup types.
 
+If the caller needs stricter assembly gates, `run_spec.json` may carry `assembly.manifest_contract` and `assembly.consensus_fields`. The contract is generic over manifest field paths: required/nonempty fields, equality checks, list membership, numeric fields, optional numeric fields, numeric bounds, and evidence-set bindings. Domain requirements are encoded as payload values in that contract, not as new `/parameter-scan` types.
+
 ## Feature detection (auto labels)
 
 The skill labels what it found on the data:

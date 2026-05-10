@@ -43,9 +43,15 @@ include(joinpath(@__DIR__, "..", "tools", "cli", "pauli_mps_sampler.jl"))
 
 const SCRIPT_PATH = normpath(@__FILE__)
 const SCRIPT_HASH = bytes2hex(sha256(read(SCRIPT_PATH)))
-const COMPUTE_MANIFEST_FIELDS = [
-    "protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts",
-]
+const COMPUTE_MANIFEST_CONTRACT = Dict{String,Any}(
+    "required_fields" => Any[
+        "protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts",
+        "cL", "se", "accept",
+    ],
+    "nonempty_fields" => Any["protocol_hash", "script_hash", "sources", "claims", "artifacts"],
+    "numeric_fields" => Any["cL", "se", "accept"],
+    "optional_numeric_fields" => Any["mean_R"],
+)
 const PAULI_MATRICES = [
     ComplexF64[1.0 0.0; 0.0 1.0],
     ComplexF64[0.0 1.0; 1.0 0.0],
@@ -85,33 +91,17 @@ function reproduction_provenance(provenance::AbstractDict=Dict{String,Any}())
 end
 
 function validate_compute_manifest!(d::AbstractDict, path::String)
-    for field in COMPUTE_MANIFEST_FIELDS
-        haskey(d, field) || error("Compute gate failed for $path: missing manifest field '$field'")
-    end
-    !isempty(strip(string(d["protocol_hash"]))) ||
-        error("Compute gate failed for $path: empty protocol_hash")
-    d["script_hash"] == SCRIPT_HASH ||
-        error("Compute gate failed for $path: script_hash does not match current script")
-    d["sources"] isa Vector && !isempty(d["sources"]) ||
-        error("Compute gate failed for $path: sources must be a nonempty list")
-    d["claims"] isa Vector && !isempty(d["claims"]) ||
-        error("Compute gate failed for $path: claims must be a nonempty list")
-    d["deviations"] isa Vector ||
-        error("Compute gate failed for $path: deviations must be a list")
-    d["artifacts"] isa AbstractDict ||
-        error("Compute gate failed for $path: artifacts must be a table")
+    contract = Dict{String,Any}(string(k) => v for (k, v) in COMPUTE_MANIFEST_CONTRACT)
+    contract["equals"] = Any[
+        Dict("field"=>"script_hash", "value"=>SCRIPT_HASH),
+        Dict("field"=>"artifacts.manifest", "value"=>path),
+        Dict("field"=>"artifacts.script", "value"=>SCRIPT_PATH),
+    ]
+    harness_validate_manifest_contract(d, contract; path=path)
     get(d["artifacts"], "manifest", nothing) == path ||
         error("Compute gate failed for $path: manifest artifact path mismatch")
     get(d["artifacts"], "script", nothing) == SCRIPT_PATH ||
         error("Compute gate failed for $path: script artifact path mismatch")
-    for field in ("cL", "se", "accept")
-        d[field] isa Real && isfinite(d[field]) ||
-            error("Compute gate failed for $path: required numeric field '$field' is not finite")
-    end
-    if haskey(d, "mean_R") && d["mean_R"] !== nothing
-        d["mean_R"] isa Real && isfinite(d["mean_R"]) ||
-            error("Compute gate failed for $path: mean_R is present but not finite")
-    end
     return true
 end
 
@@ -1232,15 +1222,10 @@ function main()
     if estimator in (:pauli_mps_norm, :pauli_mps_born_direct) && isempty(symmetry_checks)
         error("estimator=$estimator requires settings.symmetry_checks to declare target-sector verification")
     end
-    run_deviations = if estimator == :pauli_mps_norm
-        unique([provenance["deviations"]...,
-                "MPS compressed Pauli-MPS normalizer contraction replaces paper TTN/local-Metropolis Eq.-24 sampler"])
-    elseif estimator == :pauli_mps_born_direct
-        unique([provenance["deviations"]...,
-                "MPS Born-direct Pauli-MPS sampling replaces paper TTN/local-Metropolis Eq.-24 sampler"])
-    else
-        provenance["deviations"]
-    end
+    settings_deviations = get(cell_settings, "deviations", Any[])
+    settings_deviations isa Vector || error("settings.deviations must be a list when present")
+    run_deviations = unique([provenance["deviations"]...,
+                             [string(x) for x in settings_deviations]...])
     if estimator == :bridge
         allow_bridge = harness_get_bool(cell_settings, "allow_experimental_bridge",
                                         get(ENV, "FIG4_ALLOW_EXPERIMENTAL_BRIDGE", "false") == "true")
@@ -1252,10 +1237,10 @@ function main()
     cell_dir = cell_only ? joinpath(outdir, "cells", string(cell_context["cell_id"])) : outdir
     isdir(cell_dir) || mkpath(cell_dir)
 
-    estimator_label = estimator == :pauli_mps_norm ?
-        "compressed Pauli-MPS normalizer contraction" :
-        (estimator == :pauli_mps_born_direct ?
-         "Born-direct Pauli-MPS sampling" : "cached Eq.-(24) ratio-chain diagnostic")
+    estimator_label = harness_get_string(cell_settings, "estimator_label",
+                                         replace(string(estimator), "_" => " "))
+    estimator_note = harness_get_string(cell_settings, "estimator_note",
+                                        "Estimator: $estimator_label.")
     println("\n############ /verify-recommended Fig 4 reproduction ($estimator_label) ############")
     @printf("Hamiltonian : H = -Σ σ_i^x σ_j^x - h Σ σ_i^z   (PBC, translation invariant)\n")
     @printf("Anchor      : L_min = %d (exact-sum SRE on ED ground state)\n", L_min)
@@ -1327,6 +1312,9 @@ function main()
                               "sample_blocks"=>sample_blocks,
                               "initial_state"=>initial_state,
                               "symmetry_checks"=>symmetry_checks,
+                              "deviations"=>run_deviations,
+                              "estimator_label"=>estimator_label,
+                              "estimator_note"=>estimator_note,
                               "proposal_kernel"=>string(proposal),
                               "estimator"=>string(estimator)),
             "status"=>"success",
@@ -1342,6 +1330,8 @@ function main()
             "symmetry_checks"=>symmetry_checks,
             "proposal"=>res.proposal, "proposal_kernel"=>string(proposal),
             "estimator"=>string(estimator),
+            "estimator_label"=>estimator_label,
+            "estimator_note"=>estimator_note,
             "block_size"=>res.block_size,
             "n_recorded"=>res.n_recorded,
             "pauli_trunc_L"=>res.pauli_trunc_L,
@@ -1505,15 +1495,7 @@ function main()
     println("\n=========================================================")
     println("SUMMARY  Paper-grade Fig 4 reproduction ($estimator_label)")
     println("=========================================================")
-    if estimator == :ratio
-        println("  Estimator: single-chain Π_{P,2} ∝ |⟨P⟩|⁴, ratio R = |⟨P^(1)⟩|⁴|⟨P^(2)⟩|⁴/|⟨P⟩|⁴.")
-    elseif estimator == :bridge
-        println("  Estimator: bridge ratio of Eq.-(24) normalizers, using full-target and product-target samples.")
-    elseif estimator == :pauli_mps_born_direct
-        println("  Estimator: exact Born sampling from the Pauli-MPS |b(P)|² distribution; method deviation from paper TTN/local-Metropolis sampler.")
-    else
-        println("  Estimator: compressed Pauli-MPS normalizer contraction; method deviation from paper TTN/local-Metropolis sampler.")
-    end
+    println("  $estimator_note")
     println("  Anchor:    L_min=$L_min via exact-sum SRE on ED ground state.")
     @printf("  Grid:      L_chain = %s × h = %s  (%d cells).\n",
             string(Ls_chain), string(h_grid), length(Ls_chain)*length(h_grid))

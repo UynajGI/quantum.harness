@@ -46,4 +46,59 @@ include(joinpath(@__DIR__, "harness_manifest_evidence.jl"))
              "expected_abs"=>1.0, "tolerance"=>1e-6, "status"=>"pass"),
     ]
     @test_throws ErrorException harness_validate_evidence_against_declarations(wrong_binding, declarations)
+
+    forged_target = Any[
+        Dict("id"=>"sector", "kind"=>"uniform_pauli_expectation",
+             "target"=>"full", "pauli_code"=>3, "value"=>0.5,
+             "expected_abs"=>0.5, "tolerance"=>1e-6, "status"=>"pass"),
+    ]
+    @test_throws ErrorException harness_validate_evidence_against_declarations(forged_target, declarations)
+
+    measured_only = Any[
+        Dict("id"=>"sector", "kind"=>"uniform_pauli_expectation",
+             "target"=>"full", "pauli_code"=>3, "value"=>0.9999999,
+             "status"=>"pass"),
+    ]
+    @test harness_validate_evidence_against_declarations(measured_only, declarations)
+
+    manifest = Dict(
+        "status"=>"success",
+        "script_hash"=>"abc123",
+        "sources"=>["paper"],
+        "claims"=>["figure"],
+        "deviations"=>["alternate sampler"],
+        "result"=>Dict("value"=>1.02, "se"=>0.05, "budget"=>0.10),
+        "checks"=>declarations,
+        "evidence"=>bound,
+    )
+    contract = Dict(
+        "required_fields"=>["status", "script_hash", "result.value"],
+        "nonempty_fields"=>["sources", "claims"],
+        "equals"=>Any[Dict("field"=>"status", "value"=>"success")],
+        "list_contains"=>Any[Dict("field"=>"deviations", "value"=>"alternate sampler")],
+        "numeric_fields"=>["result.value", "result.se"],
+        "optional_numeric_fields"=>["mean_R"],
+        "numeric_bounds"=>Any[
+            Dict("id"=>"error budget", "lhs_field"=>"result.se", "op"=>"<=", "rhs_field"=>"result.budget"),
+        ],
+        "evidence_sets"=>Any[
+            Dict("evidence_field"=>"evidence", "declarations_field"=>"checks", "required"=>true),
+        ],
+    )
+    @test harness_validate_manifest_contract(manifest, contract; path="manifest.json")
+
+    generic_contract = Dict(
+        "numeric_bounds"=>Any[
+            Dict("id"=>"optional absent bound", "lhs_field"=>"result.se", "op"=>"<=",
+                 "rhs_field"=>"missing.budget", "when_present"=>"missing.budget"),
+        ],
+    )
+    @test harness_validate_manifest_contract(manifest, generic_contract; path="manifest.json")
+
+    bad_contract = Dict(
+        "numeric_bounds"=>Any[
+            Dict("id"=>"too strict", "lhs_field"=>"result.se", "op"=>"<=", "rhs"=>0.01),
+        ],
+    )
+    @test_throws ErrorException harness_validate_manifest_contract(manifest, bad_contract; path="manifest.json")
 end

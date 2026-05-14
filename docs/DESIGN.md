@@ -793,3 +793,167 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(
 ```
 
 The renderer composes the full JS from `figs/<id>.json` (data array) + the editorial sidecar (cell-popover labels) + this skeleton.
+
+---
+
+## 12. Responsive Behavior
+
+A single HTML file must render cleanly on both desktop (≥ 992px) and mobile (≤ 640px). Three breakpoints with component-specific collapsing rules.
+
+**Required `<head>` element** (mandatory; without it mobile browsers use a default viewport width and the layout breaks):
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+```
+
+**Required global rule** (suppresses the horizontal scrollbar that off-canvas drawers / glossboxes would otherwise create):
+
+```css
+html, body { overflow-x: hidden; }
+```
+
+**Breakpoint scale:**
+
+| Width | Name | Layout changes |
+|---|---|---|
+| ≥ 992px | Desktop | Full layout: side-by-side hero, drawer 440px from right, all hover affordances active |
+| 640-991px | Tablet | Tighter padding, drawer 380px, below-fold collapses to single column |
+| ≤ 640px | Mobile | Side-by-side **stacks** vertically (paper above, ours below); drawer becomes **bottom sheet** sliding up; hero claim drops 32→22px; chip strip wraps tighter; fig-controls move below panel-title |
+
+**CSS rules (mandatory; copy verbatim into the rendered HTML):**
+
+```css
+@media (max-width: 991px) {
+  .topbar, .hero, .strip, .scroll-hint, .below { padding-left: 24px; padding-right: 24px; }
+  .duo { gap: 14px; }
+  .panel-card { padding: 20px 22px 16px; }
+  svg.plot { height: 320px; }
+  .drawer { width: 380px; }
+  .below { grid-template-columns: 1fr; gap: 16px; }
+  .panel.full { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
+@media (max-width: 640px) {
+  .topbar { grid-template-columns: 1fr; padding: 16px 18px; gap: 8px; }
+  .topbar .meta { text-align: left; font-size: 10.5px; }
+  .topbar .id { display: inline-block; margin-bottom: 4px; }
+
+  .hero { padding: 24px 18px 20px; }
+  .claim-line { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 18px; }
+  .claim { font-size: 22px; line-height: 1.20; }
+  .claim-tag { padding-top: 0; font-size: 10px; }
+
+  .duo { grid-template-columns: 1fr; gap: 14px; }
+  .panel-card { padding: 18px 20px 14px; border-radius: 18px; }
+  .panel-title { font-size: 14px; margin-bottom: 10px; }
+  .paper-img-wrap { padding: 12px 14px; min-height: 200px; }
+  .plot-area { min-height: 280px; }
+  svg.plot { height: 280px; }
+  .ours-controls { position: static; margin-bottom: 10px; }
+  .legend-row { gap: 6px; padding-top: 10px; }
+  .legend-item { padding: 4px 8px; font-size: 12px; }
+
+  .strip { padding: 0 18px; gap: 6px; margin-top: 14px; }
+  .chip { font-size: 11.5px; padding: 6px 12px; min-height: 32px; }
+  .chip.spacer { display: none; }
+  .chip-pop { left: 0; right: 0; bottom: auto; top: calc(100% + 6px); max-width: none; }
+
+  .scroll-hint { margin-top: 24px; padding: 0 18px; font-size: 10px; }
+
+  .below { padding: 0 18px 56px; margin-top: 40px; gap: 14px; }
+  .panel { padding: 18px 20px; border-radius: 14px; }
+  .panel h3 { font-size: 18px; }
+  .panel.full { grid-template-columns: 1fr !important; gap: 14px; padding: 18px 20px !important; }
+  .ctr { grid-template-columns: 90px 1fr; gap: 8px 14px; font-size: 12.5px; }
+
+  /* Drawer becomes a bottom sheet on mobile */
+  .drawer {
+    top: auto; bottom: 0; left: 0; right: 0; width: 100%;
+    max-height: 80vh; border-left: none; border-top: 1px solid var(--border-warm);
+    border-radius: 18px 18px 0 0;
+    transform: translateY(100%);
+  }
+  .drawer.open { transform: translateY(0); }
+  .drawer-close { top: 14px; right: 18px; font-size: 26px; padding: 4px 10px; }
+
+  .callout { font-size: 11px; min-width: 200px; }
+}
+```
+
+---
+
+## 13. Hover-or-Tap
+
+Every hover-revealed element MUST also respond to tap on touch devices. Hover-only is forbidden — it makes affordances inaccessible on phones.
+
+**CSS pattern** (suppress hover on `(hover: none)` viewports, enable tap-driven `.tapped` class):
+
+```css
+@media (hover: none) {
+  .chip { cursor: pointer; }
+  .chip-pop { display: none; }
+  .chip.tapped .chip-pop { display: block; opacity: 1; transform: translateY(0); }
+  .sym { cursor: pointer; }
+}
+.chip.tapped .chip-pop { opacity: 1; transform: translateY(0); }
+```
+
+**JS pattern** (toggle `.tapped` on click; tap-outside dismisses; only one chip open at a time):
+
+```javascript
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', e => {
+    e.stopPropagation();
+    const wasTapped = chip.classList.contains('tapped');
+    document.querySelectorAll('.chip.tapped').forEach(c => c.classList.remove('tapped'));
+    if (!wasTapped) chip.classList.add('tapped');
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.chip.tapped').forEach(c => c.classList.remove('tapped'));
+});
+```
+
+Same pattern applies to `.sym` glossary terms. For `.pt` data points: hover shows callout (desktop), tap opens drawer directly (mobile — drawer is a more useful interaction than a transient callout on a small screen).
+
+**Touch target floor: 44×44px.** For data points (visible 3.6px), the 14px transparent stroke specified in §11 brings the effective hit area to ~32×32px — close to the floor; combined with the magnetic-snapping behavior, finger taps are reliable.
+
+---
+
+## 14. Accessibility
+
+WCAG-AA contrast ratios; full keyboard navigation; ARIA semantics on interactive elements.
+
+**Color contrast (verify each pair, minimum 4.5:1 for normal text, 3:1 for large text):**
+
+- Body text (`charcoal #4d4c48` on `parchment #f5f4ed`): 8.2:1 ✓
+- Secondary text (`olive #5e5d59` on `parchment`): 6.4:1 ✓
+- Tertiary text (`stone #87867f` on `parchment`): 4.0:1 — passes for large text only; do not use for body
+- Terracotta accent (`#c96442` on `parchment`): 4.8:1 ✓ (use for emphasis, not body)
+- Callout text (`silver #b0aea5` on `near-black #141413`): 9.1:1 ✓
+
+**Keyboard navigation:**
+
+- `Tab` cycles all interactive elements (chips, legend items, toggles, data points, drawer-close, glossbox-dismiss).
+- `Esc` closes the drawer, dismisses the glossbox, dismisses any tapped chip.
+- All `<button>` and `<a>` elements use the browser's default focus ring (do not suppress `:focus`).
+- Custom interactive `<div>` / `<span>` (e.g., `.chip`, `.legend-item`) carry `tabindex="0"` and `role="button"`.
+
+**ARIA semantics (mandatory on interactive elements):**
+
+```html
+<span class="chip ok" role="button" tabindex="0" aria-describedby="chip-pop-1">
+  symmetry sector
+  <span class="chip-pop" id="chip-pop-1" role="tooltip">…description…</span>
+</span>
+
+<svg class="plot" role="img" aria-labelledby="plot-title plot-desc">
+  <title id="plot-title">c_L vs h on the 1D TFIM</title>
+  <desc id="plot-desc">Reproduction of Tarabunga 2023 Fig 4(a). Four curves L=16, 32, 64, 128 of c_L = 2 M_2(L/2) − M_2(L) across h ∈ [0.8, 1.2].</desc>
+  <circle class="pt" aria-label="L=64, h=1.00, c_L = -0.171 ± 0.061" .../>
+</svg>
+
+<button class="drawer-close" aria-label="Close cell manifest panel">×</button>
+```
+
+**Hard rule:** every interactive element must be reachable and operable via keyboard alone, and every non-text element conveying information must have a text alternative.

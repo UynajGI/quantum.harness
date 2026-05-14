@@ -4,7 +4,10 @@ Direct diagonalization of the Hamiltonian as a sparse matrix in a chosen basis. 
 
 ## Setup
 
-Julia + KrylovKit.jl: `make install julia && make install itensors` (the itensors target also installs KrylovKit).
+Canonical stack: `julia-ed` (`tools/software/stacks/julia-ed.toml`).
+
+Install: `make install julia-ed`. The `itensors` stack also installs
+KrylovKit, so an existing DMRG environment is sufficient for ED checks.
 
 For very small problems, dense `LinearAlgebra.eigen` works directly on `Matrix{Float64}`.
 

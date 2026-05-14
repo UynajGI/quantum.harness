@@ -4,10 +4,16 @@ Variational method: parameterize a wavefunction ansatz, optimize parameters by m
 
 ## Setup
 
+Canonical stack: `netket` (`tools/software/stacks/netket.toml`).
+
 ```
 make install netket
 source .venv/bin/activate
 ```
+
+GPU and multi-node GPU installs are separate `netket` stack profiles. Smoke
+tests for those profiles must run inside a compute allocation, not on a login
+node.
 
 ## Notation
 

@@ -1,0 +1,28 @@
+id = "itensors"
+name = "ITensors.jl + ITensorMPS.jl"
+language = "julia"
+canonical_for = ["dmrg", "tebd", "mps", "tensor-network-checks"]
+default_profile = "cpu"
+
+[profiles.cpu]
+label = "CPU"
+default = true
+install = "cpu"
+smoke = "cpu"
+
+[profiles.cpu.requirements]
+allocation = "login-or-compute"
+mpi = false
+
+[install.cpu]
+command = "make install itensors"
+notes = "Uses Julia Pkg in julia-env; remote setup is handled by setup-julia before this command runs."
+
+[smoke.cpu]
+where = "login"
+command = "julia --project=julia-env -e 'using ITensors, ITensorMPS, KrylovKit, MPSKit'"
+
+[docs]
+official = "https://docs.itensor.org/ITensors/dev/"
+install = "https://docs.itensor.org/ITensors/dev/getting_started/Installing.html"
+itensormps = "https://github.com/ITensor/ITensorMPS.jl"

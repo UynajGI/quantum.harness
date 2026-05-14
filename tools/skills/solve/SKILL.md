@@ -25,13 +25,13 @@ Infer the problem from the user's prompt. Do NOT ask clarifying questions if def
 
 ### 2. Match skill
 
-Find the matching model skill (`tools/skills/problems/models/*`) and any relevant physics skill (`tools/skills/problems/physics/*`). Read the skill's Diagnose section for canonical defaults. Read the method recommendation table for which method card to use.
+Find the matching model skill (`tools/skills/problems/models/*`) and any relevant physics skill (`tools/skills/problems/physics/*`). Read the skill's Diagnose section for canonical defaults. Read the method recommendation table for which method card to use, then read that method card's canonical software stack and `tools/software/stacks/<stack>.toml` install contract.
 
 If the problem hits a branch table redirect (e.g., dynamics → `spectral.md`, finite-T → `finite-t.md`), follow it immediately.
 
 ### 3. Act
 
-Run the calculation silently using the method card's code shape. Auto-generate a convergence plot. Save script to `scripts/` and results to `results/`.
+Run the calculation silently using the method card's code shape. If the canonical stack is missing, install the selected stack profile first; for remote runs, let `/slurm` run the profile's smoke test in the declared place (`login` or `compute`). Auto-generate a convergence plot. Save script to `scripts/` and results to `results/`.
 
 For frontier problems: act on literature first (run `arxiv-search`), then offer compute as a follow-up.
 

@@ -1,0 +1,73 @@
+id = "netket"
+name = "NetKet + JAX"
+language = "python"
+canonical_for = ["vmc", "nqs"]
+default_profile = "cpu"
+
+[profiles.cpu]
+label = "CPU"
+default = true
+install = "cpu"
+smoke = "cpu"
+
+[profiles.cpu.requirements]
+allocation = "login-or-compute"
+mpi = false
+
+[profiles.gpu]
+label = "Single-node GPU"
+install = "cuda_wheel"
+fallback_install = ["cuda_modules"]
+smoke = "gpu"
+
+[profiles.gpu.requirements]
+os = "linux"
+gpu = "nvidia"
+allocation = "compute"
+mpi = false
+
+[profiles.gpu_mpi]
+label = "Multi-node GPU"
+install = "cuda_mpi"
+smoke = "gpu_mpi"
+
+[profiles.gpu_mpi.requirements]
+os = "linux"
+gpu = "nvidia"
+allocation = "compute"
+mpi = true
+cuda_aware_mpi = true
+
+[install.cpu]
+command = "make install netket"
+
+[install.cuda_wheel]
+command = "uv pip install 'netket[cuda]' matplotlib"
+notes = "Preferred single-node GPU path on Linux when pip-provided CUDA wheels are acceptable."
+
+[install.cuda_modules]
+modules = ["cuda", "cudnn"]
+command = "uv pip install 'jax[cuda12_local]' netket flax optax matplotlib"
+notes = "Fallback when the cluster requires CUDA and cuDNN modules instead of pip-provided CUDA wheels."
+
+[install.cuda_mpi]
+modules = ["cuda", "cudnn", "mpi"]
+command = "uv pip install 'jax[cuda12_local]' mpi4py cython mpi4jax netket flax optax matplotlib"
+notes = "Multi-node path; smoke test must run under the scheduler launcher."
+
+[smoke.cpu]
+where = "login"
+command = "python -c 'import netket, jax; print(netket.__version__, jax.devices())'"
+
+[smoke.gpu]
+where = "compute"
+command = "JAX_PLATFORM_NAME=gpu python -c 'import jax; print(jax.devices())'"
+
+[smoke.gpu_mpi]
+where = "compute"
+command = "srun -n 2 python -c 'import mpibackend4jax; import jax; jax.distributed.initialize(); print(jax.process_count(), jax.devices())'"
+
+[docs]
+official = "https://netket.readthedocs.io/en/stable/"
+install = "https://netket.readthedocs.io/en/stable/docs/install.html"
+clusters = "https://netket.readthedocs.io/en/stable/docs/clusters.html"

@@ -1,0 +1,27 @@
+id = "julia-ed"
+name = "Julia ED"
+language = "julia"
+canonical_for = ["ed", "small-system-verification"]
+default_profile = "cpu"
+
+[profiles.cpu]
+label = "CPU"
+default = true
+install = "cpu"
+smoke = "cpu"
+
+[profiles.cpu.requirements]
+allocation = "login-or-compute"
+mpi = false
+
+[install.cpu]
+command = "make install julia-ed"
+notes = "SparseArrays and LinearAlgebra are Julia stdlibs; KrylovKit supplies Lanczos-style eigensolvers."
+
+[smoke.cpu]
+where = "login"
+command = "julia --project=julia-env -e 'using LinearAlgebra, SparseArrays, KrylovKit'"
+
+[docs]
+official = "https://jutho.github.io/KrylovKit.jl/stable/"
+install = "https://pkgdocs.julialang.org/"

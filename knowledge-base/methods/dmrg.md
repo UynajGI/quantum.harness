@@ -4,6 +4,8 @@ A variational MPS method for ground states of 1D and quasi-1D Hamiltonians. Opti
 
 ## Setup
 
+Canonical stack: `itensors` (`tools/software/stacks/itensors.toml`).
+
 ```
 make install julia        # Install Julia via juliaup if missing
 make install itensors     # Install ITensors.jl + ITensorMPS.jl + KrylovKit.jl into julia-env/

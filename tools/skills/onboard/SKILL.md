@@ -18,7 +18,9 @@ First-touch intake. Set up the domain environment, optionally configure the user
 
 ### 1. Setup — do it, don't ask
 
-Run `make setup && make domain-setup` silently. This installs Ion + skills + the local domain stack (currently Julia + ITensors). The Makefile's `DOMAIN_TOOLS` variable defines what gets installed — if the domain needs change, update the Makefile, not this skill.
+Run `make setup && make domain-setup` silently. This installs Ion + skills + the local default domain stack. The Makefile's `DOMAIN_TOOLS` variable defines the default stack; software-stack install contracts live in `tools/software/stacks/*.toml`.
+
+Do not install every available method stack during first-touch onboarding. Humans install the smallest stack needed now, then add stacks when a method actually needs them.
 
 Report one line:
 - All good: "Domain stack ready."
@@ -102,7 +104,7 @@ If nothing fits: *"That's outside current scope (ground-state lattice problems).
 - Walk through a tutorial.
 - Ask the user to read docs.
 - Show a menu of 13 skills.
-- Hardcode which software to install (that's the Makefile's job).
+- Hardcode package-level install instructions (the stack contracts in `tools/software/stacks/*.toml` name install commands, smoke tests, and upstream docs; the Makefile and setup scripts execute them).
 - Bootstrap Julia on the cluster (that's `/setup-julia`, dispatched by `/slurm` on first cluster Julia run).
 - Pile questions on the user — every gate is one question with a clear *why* and an escape hatch.
 

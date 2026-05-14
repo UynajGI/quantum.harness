@@ -1,0 +1,41 @@
+id = "sse"
+name = "StochasticSeriesExpansion.jl + Carlo.jl"
+language = "julia"
+canonical_for = ["qmc", "sse", "sign-free-spin-qmc"]
+default_profile = "cpu"
+
+[profiles.cpu]
+label = "CPU"
+default = true
+install = "cpu"
+smoke = "cpu"
+
+[profiles.cpu.requirements]
+allocation = "login-or-compute"
+mpi = false
+
+[profiles.cpu_mpi]
+label = "Multi-process CPU"
+install = "cpu"
+smoke = "cpu_mpi"
+
+[profiles.cpu_mpi.requirements]
+allocation = "compute"
+mpi = true
+
+[install.cpu]
+command = "make install sse"
+notes = "Carlo.jl supplies job management and checkpointing; StochasticSeriesExpansion.jl supplies the SSE QMC engine."
+
+[smoke.cpu]
+where = "login"
+command = "julia --project=julia-env -e 'using Carlo, StochasticSeriesExpansion'"
+
+[smoke.cpu_mpi]
+where = "compute"
+command = "mpirun -n 2 julia --project=julia-env -e 'using Carlo, StochasticSeriesExpansion; println(\"sse mpi smoke\")'"
+
+[docs]
+official = "https://lukas.weber.science/StochasticSeriesExpansion.jl/stable/"
+tutorial = "https://lukas.weber.science/StochasticSeriesExpansion.jl/stable/tutorial.html"
+carlo = "https://lukas-weber.github.io/Carlo.jl/stable/"

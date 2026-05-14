@@ -21,7 +21,7 @@ ZLP := zlp
 .PHONY: setup test clean help install $(addprefix install-,$(INSTALLABLE))
 .PHONY: zulip-whoami zulip-pull zulip-send zulip-topics zulip-messages zulip-config
 
-INSTALLABLE := quarto quimb julia itensors netket
+INSTALLABLE := quarto quimb julia julia-ed itensors netket netket-gpu sse pepskit classical-repro
 
 help: ## Show available targets and installable tools
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -106,12 +106,44 @@ install-itensors: ## Install ITensors.jl + ITensorMPS.jl + KrylovKit.jl into jul
 	@echo "Julia/ITensors environment ready in julia-env/"
 	@echo "Activate with: julia --project=julia-env"
 
+install-julia-ed: ## Install Julia ED dependencies into julia-env/
+	@command -v julia >/dev/null 2>&1 || { echo "Julia not found. Run: make install julia"; exit 1; }
+	@mkdir -p julia-env
+	@cd julia-env && julia --project=. -e 'using Pkg; Pkg.add(["KrylovKit", "Plots", "JSON"])'
+	@echo "Julia ED environment ready in julia-env/"
+	@echo "Activate with: julia --project=julia-env"
+
 install-netket: ## Install NetKet + JAX for VMC / neural quantum states into .venv
 	@command -v uv >/dev/null 2>&1 || { echo "uv not found. Install uv first: https://docs.astral.sh/uv/getting-started/installation/"; exit 1; }
 	@[ -d .venv ] || uv venv .venv
 	@uv pip install netket jax jaxlib flax optax matplotlib
 	@echo "NetKet environment ready in .venv"
 	@echo "Activate with: source .venv/bin/activate"
+
+install-netket-gpu: ## Install NetKet with CUDA-enabled JAX wheels into .venv (Linux GPU nodes)
+	@command -v uv >/dev/null 2>&1 || { echo "uv not found. Install uv first: https://docs.astral.sh/uv/getting-started/installation/"; exit 1; }
+	@[ -d .venv ] || uv venv .venv
+	@uv pip install 'netket[cuda]' matplotlib
+	@echo "NetKet GPU environment ready in .venv"
+	@echo "Smoke test inside a GPU allocation: JAX_PLATFORM_NAME=gpu python -c 'import jax; print(jax.devices())'"
+
+install-sse: ## Install Julia SSE QMC stack into julia-env/
+	@command -v julia >/dev/null 2>&1 || { echo "Julia not found. Run: make install julia"; exit 1; }
+	@mkdir -p julia-env
+	@cd julia-env && julia --project=. -e 'using Pkg; Pkg.add(["Carlo", "StochasticSeriesExpansion", "DataFrames", "Plots", "JSON"])'
+	@echo "Julia SSE QMC environment ready in julia-env/"
+	@echo "Activate with: julia --project=julia-env"
+
+install-pepskit: ## Install PEPSKit.jl + TensorKit.jl CTMRG stack into julia-env/
+	@command -v julia >/dev/null 2>&1 || { echo "Julia not found. Run: make install julia"; exit 1; }
+	@mkdir -p julia-env
+	@cd julia-env && julia --project=. -e 'using Pkg; Pkg.add(["PEPSKit", "TensorKit", "QuadGK", "Plots"])'
+	@echo "Julia PEPSKit/CTMRG environment ready in julia-env/"
+	@echo "Activate with: julia --project=julia-env"
+
+install-classical-repro: ## Install Julia stacks for ED, DMRG, QMC/SSE, and CTMRG reproduction targets
+	@for tool in julia-ed itensors sse pepskit; do $(MAKE) install-$$tool; done
+	@echo "Classical reproduction Julia stacks ready."
 
 render: ## Render a markdown file to HTML. Usage: make render FILE=<path.md>
 	@if [ -z "$(FILE)" ]; then echo "Usage: make render FILE=<path.md>"; exit 1; fi

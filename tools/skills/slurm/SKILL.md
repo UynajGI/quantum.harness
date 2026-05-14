@@ -20,6 +20,7 @@ For parameter sweeps that map onto an array of cells, compose with `/parameter-s
 
 - *Script* — path to an sbatch script (or a compute script + the array template `tools/cluster/<active>.md` provides).
 - *Cluster profile* — auto-resolved from `tools/cluster/active.md` symlink or `HARNESS_CLUSTER_PROFILE=<name>` env var. Profile provides ssh alias, default partition, modules, sbatch idiom, queue commands.
+- *Software stack* (optional) — stack id and profile from `tools/software/stacks/*.toml` chosen by the calling method card, such as `itensors:cpu`, `sse:cpu_mpi`, or `netket:gpu`.
 - *Cell map* (optional) — for array jobs: `results/<run>/run_spec.json` with `cells = [{cell_id, params}]`; the array script maps `$SLURM_ARRAY_TASK_ID` or `HARNESS_CELL_INDEX` → a cell.
 - *Ship strategy* (optional) — `git` (default; commit if dirty + push + remote pull) or `rsync` (bypass git for fast iteration).
 
@@ -31,7 +32,8 @@ The array interface is generic: the submitted script receives `HARNESS_RUN_SPEC=
 2. **Partition selection — probe queue, then ratify with user via Superpowers fork**: before submit, never silently default to the cluster profile's `default-cpu` row. Read the calling skill's resource-class hint (cpu / gpu / high-mem), filter candidate partitions from the profile table, then probe live queue load via `ssh <alias> 'sinfo -o "%P %a %.10l %.6D %.6t"'` (or the cluster profile's status command). Present 2–3 candidates to the user via `AskUserQuestion` — recommended option first, each option with: partition name, current load (idle/mix/alloc/down node counts), cores/memory specs, expected queue wait, one-line pro / con. The user ratifies. Defaults are not free; an idle high-core partition can be a free win, and a congested default-cpu partition can be a hidden multi-hour wait. Per AGENTS.md "warm-clear-concise UX rule".
 3. **First-run bootstrap** (only if needed; idempotent):
    - Test if `<repo_path_remote>` exists on cluster. If not, `git clone` per the profile's `bootstrap_one_time` snippet.
-   - Run the setup check required by the submitted command and the cluster profile. For Julia commands, use `tools/cli/setup-julia.sh verify <repo>/julia-env <smoke-pkg>` and dispatch `/setup-julia --target remote:<alias>` if it fails. For other stacks, use the declared setup primitive or command-specific smoke check; `/slurm` does not invent language setup.
+   - Read the selected stack contract when one is supplied. For `language = "julia"`, ensure Julia is usable first (`/setup-julia --target remote:<alias>` if needed), then run the stack profile's install command. For non-Julia stacks, run the declared install command or hand off to the language setup primitive if one exists.
+   - Run the stack profile's smoke test in the declared place. `where = "login"` can run by ssh before submit; `where = "compute"` must run through a small scheduler allocation. GPU NetKet is compute-only: do not test CUDA/JAX devices on the login node.
    - If the cluster's `bootstrap_one_time` declares cluster-specific quirks (license server, module load, depot/cache path, etc.), run them once, write a `~/.harness-bootstrapped` marker on the cluster.
 4. **Ship**:
    - `git`: stage and commit if working tree dirty (only with user authorization for this run); `git push origin <branch>`; `ssh <alias> "cd <repo> && git fetch && git checkout <branch> && git pull"`.
@@ -83,6 +85,7 @@ If no profile is found, the skill emits the generic array wrapper without resour
 - `/parameter-scan` calls `/slurm` once with an array of cells when the user is sweeping on a cluster.
 - `/reproduce-paper` calls `/slurm` for any cluster step in the figure pipeline.
 - Language setup is dispatched by `/slurm`'s first-run bootstrap only when the submitted command requires it and the profile/check says the environment is not ready.
+- Software-stack installs are driven by `tools/software/stacks/*.toml`: the profile is user-visible runtime intent (CPU, GPU, multi-process CPU, multi-node GPU), while install strategies are implementation details.
 - `/onboard` populates the cluster profile this skill reads.
 - Manifest schema is per-method-card convention; the writeup-handoff close in `/reproduce-paper` consumes them at session close.
 

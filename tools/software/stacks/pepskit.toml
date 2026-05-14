@@ -1,0 +1,28 @@
+id = "pepskit"
+name = "PEPSKit.jl + TensorKit.jl"
+language = "julia"
+canonical_for = ["ctmrg", "peps", "classical-ising-ctmrg"]
+default_profile = "cpu"
+
+[profiles.cpu]
+label = "CPU"
+default = true
+install = "cpu"
+smoke = "cpu"
+
+[profiles.cpu.requirements]
+allocation = "login-or-compute"
+mpi = false
+
+[install.cpu]
+command = "make install pepskit"
+notes = "CTMRG is CPU-first; package precompilation can be slow on fresh remote accounts."
+
+[smoke.cpu]
+where = "login"
+command = "julia --project=julia-env -e 'using TensorKit, PEPSKit, QuadGK'"
+
+[docs]
+official = "https://quantumkithub.github.io/PEPSKit.jl/stable/"
+install = "https://quantumkithub.github.io/PEPSKit.jl/stable/"
+ctmrg_example = "https://quantumkithub.github.io/PEPSKit.jl/stable/examples/2d_ising_partition_function/"

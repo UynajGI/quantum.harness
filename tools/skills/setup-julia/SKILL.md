@@ -9,6 +9,11 @@ Install and configure Julia for the harness — install via juliaup, configure t
 
 This skill is for *Julia-specific configuration*. Cluster-side conventions (ssh, scheduler, partitions) live in `tools/cluster/<active>.md` and are read here for `region` defaults and (when target is remote) the ssh alias and `repo_path_remote`.
 
+Julia package stacks are declared separately in `tools/software/stacks/*.toml`.
+This skill only makes Julia itself and `julia-env/` usable locally or remotely;
+after that, the selected stack's install command (for example `make install itensors`,
+`make install sse`, or `make install pepskit`) installs method packages.
+
 ## When to activate
 
 - A workflow about to run Julia code finds `julia` not installed.
@@ -56,6 +61,7 @@ This skill follows the Jinguo-group recipe verbatim (https://book.jinguo-group.s
 - Called by `/onboard` if the user signals they will write Julia code (e.g., DMRG / ITensors workflows).
 - Called by `/slurm` pre-submit when the remote cluster's `julia-env/Manifest.toml` hasn't been instantiated yet.
 - Called by `make install julia` and `make install itensors` recipes (the makefile recipes can dispatch the skill via `${CLAUDE_SKILL_DIR}/setup-julia/...` once registered).
+- Precedes any `language = "julia"` stack contract in `tools/software/stacks/*.toml`.
 - Pairs with `tools/cluster/<active>.md` for the `region` default mirror and (for remote) the ssh alias.
 
 ## Mirror-config note (mainland China — Jinguo-group recipe)

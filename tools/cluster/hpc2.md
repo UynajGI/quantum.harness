@@ -17,6 +17,9 @@ HPC2 — HKUST(GZ) institutional Slurm cluster. CPU-heavy stack with a small GPU
 - `scheduler.type` = `slurm`.
 - `scheduler.default_queue` = `i64m512u` (the row tagged `default-cpu` below).
 - `scheduler.default_account` = (not required — Slurm picks the user's default automatically; do **not** emit `#SBATCH --account=`).
+- Non-interactive SSH sessions must run `module load slurm` before `sbatch`,
+  `squeue`, `scontrol`, or `sacct`; otherwise `/usr/bin/sbatch` may look for
+  `/etc/slurm-llnl/slurm.conf` and fail with `ClusterName needs to be specified`.
 
 ## Partitions
 
@@ -101,6 +104,7 @@ bash tools/cli/setup-julia.sh verify julia-env ITensors
 #SBATCH --output=results/<run>/cells/<cell_id>/slurm-%j.out
 
 export PATH="$HOME/.juliaup/bin:$PATH"
+module load slurm
 cd $SLURM_SUBMIT_DIR
 julia --project=julia-env <script>.jl
 ```
@@ -124,6 +128,7 @@ Use the juliaup-installed Julia (≥ 1.11) rather than `module load julia/1.10.9
 
 export HARNESS_RUN_SPEC=results/<run>/run_spec.json
 export HARNESS_ENTRYPOINT=scripts/<per-cell-script>.jl
+module load slurm
 tools/cli/harness_array_sbatch.sh
 ```
 
@@ -133,11 +138,11 @@ Array idiom: `#SBATCH --array=N-M` with `$SLURM_ARRAY_TASK_ID` as the generic ce
 
 | Purpose | Command |
 |---|---|
-| List my queued / running jobs | `squeue -u $USER` |
+| List my queued / running jobs | `module load slurm && squeue -u $USER` |
 | Show partition state and capacity | `spartition` (HPC2-local alias for `sinfo` summary) |
-| Show one job's full state | `scontrol show job <jobid>` |
-| Accounting / completed jobs | `sacct -u $USER --starttime=now-1day --format=JobID,State,ExitCode,MaxRSS,Elapsed` |
-| Show partition definitions | `scontrol show partition` |
+| Show one job's full state | `module load slurm && scontrol show job <jobid>` |
+| Accounting / completed jobs | `module load slurm && sacct -u $USER --starttime=now-1day --format=JobID,State,ExitCode,MaxRSS,Elapsed` |
+| Show partition definitions | `module load slurm && scontrol show partition` |
 
 ## Notes
 

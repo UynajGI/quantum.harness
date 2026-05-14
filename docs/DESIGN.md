@@ -328,3 +328,357 @@ What makes Claude's design truly distinctive is its warm neutral palette. Every 
 5. For shadows, use "ring shadow (0px 0px 0px 1px)" or "whisper shadow" — never generic "drop shadow"
 6. Specify the warm background — "on Parchment (#f5f4ed)" or "on Near Black (#141413)"
 7. Keep illustrations organic and conceptual — describe "hand-drawn-feeling" style
+
+---
+
+## 10. Harness Extensions — Components
+
+These components extend the upstream Claude system for scientific reproduction reports. Use them in addition to the upstream's buttons, cards, and inputs (sections 4 and 5). Every component below uses warm-only neutrals (per §2 palette) and ring shadows (per §6 elevation).
+
+### 10.1 Status chip + popover (`chip` + `chip-pop`)
+
+Used to surface verification status at a glance in the report's status strip. Each chip is a one-word label with a one-sentence explanation in a small dark popover that appears on hover (desktop) or tap (mobile).
+
+**HTML:**
+
+```html
+<span class="chip ok" role="button" tabindex="0" aria-describedby="chip-pop-1">symmetry sector
+  <span class="chip-pop" id="chip-pop-1" role="tooltip">Conserved Z₂ parity respected. Ground state in the expected sector at every cell.</span>
+</span>
+<span class="chip warn" role="button" tabindex="0">MPS backend
+  <span class="chip-pop" role="tooltip">Used MPS at χ=30 instead of TTN. Long-range PBC correlations under-resolved.</span>
+</span>
+<span class="chip muted" role="button" tabindex="0">cross-method check pending
+  <span class="chip-pop" role="tooltip">Independent TTN run at matched parameters — the next obligation.</span>
+</span>
+```
+
+**CSS:**
+
+```css
+.chip {
+  font-family: var(--sans); font-size: 12px;
+  background: var(--ivory); border: 1px solid var(--border-warm);
+  color: var(--charcoal); border-radius: 999px;
+  padding: 5px 12px;
+  display: inline-flex; align-items: center; gap: 7px;
+  cursor: help; position: relative;
+  transition: background 150ms ease;
+  font-variant-numeric: tabular-nums;
+}
+.chip:hover { background: var(--sand); }
+.chip.ok::before  { content: '✓'; color: var(--olive); font-weight: 500; }
+.chip.warn        { border-color: var(--terracotta); color: var(--terracotta); }
+.chip.warn::before { content: '⚠'; }
+.chip.warn:hover  { background: rgba(201,100,66,0.06); }
+.chip.muted       { color: var(--stone); border-color: var(--border-cream); }
+
+.chip-pop {
+  position: absolute; bottom: calc(100% + 8px); left: 0;
+  background: var(--near-black); color: var(--silver);
+  border-radius: 8px; padding: 8px 12px;
+  font-size: 12px; line-height: 1.5; max-width: 280px;
+  box-shadow: 0 8px 24px rgba(20,20,19,0.18);
+  opacity: 0; pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  white-space: normal; z-index: 30;
+}
+.chip:hover .chip-pop { opacity: 1; transform: translateY(0); }
+```
+
+Tap-fallback (touch devices): see §13 Hover-or-tap.
+
+### 10.2 Glossary tooltip (`glossbox`)
+
+Used to define inline scientific symbols (`c_L(h)`, `M_2`, etc.) on hover or tap, without forcing definitions into the prose.
+
+**HTML:**
+
+```html
+<span class="sym" data-term="cl">c<sub>L</sub>(h)</span>
+
+<!-- Single tooltip element somewhere in <body>, populated by JS on hover -->
+<div class="glossbox" id="glossbox">
+  <div class="label">Term</div>
+  <div class="term-name" id="gb-name"></div>
+  <div id="gb-body"></div>
+  <div class="formula" id="gb-formula"></div>
+</div>
+```
+
+**CSS:**
+
+```css
+.sym {
+  font-family: var(--serif); font-style: italic;
+  border-bottom: 1px dotted var(--stone); cursor: help;
+  transition: border-color 150ms ease;
+}
+.sym:hover { border-bottom-color: var(--terracotta); border-bottom-style: solid; }
+
+.glossbox {
+  position: fixed; max-width: 320px;
+  background: var(--ivory); border: 1px solid var(--border-warm);
+  border-radius: 12px; padding: 14px 16px;
+  box-shadow: 0 0 0 1px var(--ring-warm), 0 12px 32px rgba(20,20,19,0.06);
+  font-family: var(--sans); font-size: 13.5px; line-height: 1.55;
+  color: var(--charcoal);
+  opacity: 0; transform: translateY(4px);
+  transition: opacity 150ms ease, transform 150ms ease;
+  pointer-events: none; z-index: 200;
+}
+.glossbox.show { opacity: 1; transform: translateY(0); }
+.glossbox .label { font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--terracotta); margin-bottom: 6px; }
+.glossbox .term-name { font-family: var(--serif); font-size: 17px; color: var(--near-black); margin-bottom: 6px; line-height: 1.25; }
+.glossbox .formula { font-family: var(--mono); font-size: 12.5px; color: var(--olive); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-cream); }
+```
+
+JS contract: on `mouseenter` of any `.sym`, populate `#gb-name`, `#gb-body`, `#gb-formula` from a `GLOSS` lookup keyed by `data-term`, position the glossbox below the symbol, add `.show`. On `mouseleave`, remove `.show`.
+
+### 10.3 Hover callout (`callout`)
+
+Dark popover that appears next to a data point when hovered. Shows the cell's identity, observable value, error bar, accept rate, wall time, timestamp, and manifest filename.
+
+**HTML:**
+
+```html
+<div class="callout" id="callout"></div>
+<!-- Populated dynamically by JS:
+  <div class="callout-row"><span>L · h</span><b>64 · 1.00</b></div>
+  <div class="callout-divider"></div>
+  <div class="callout-row"><span>c_L</span><b>-0.1706</b></div>
+  ...
+  <div class="callout-meta">2026-05-07 18:05</div>
+  <div class="callout-meta">manifest_L64_h1.00.json</div>
+-->
+```
+
+**CSS:**
+
+```css
+.callout {
+  position: absolute; pointer-events: none;
+  background: var(--near-black); color: var(--silver);
+  border-radius: 10px; padding: 12px 14px;
+  font-family: var(--sans); font-size: 12px;
+  box-shadow: 0 0 0 1px var(--near-black), 0 12px 32px rgba(20,20,19,0.18);
+  opacity: 0; transition: opacity 140ms ease, transform 140ms ease;
+  transform: translateY(4px); z-index: 50; min-width: 220px;
+}
+.callout.show { opacity: 1; transform: translateY(0); }
+.callout-row { display: flex; justify-content: space-between; gap: 14px; margin: 3px 0; }
+.callout-row span { color: var(--silver); }
+.callout-row b { color: #ffffff; font-family: var(--mono); font-weight: 400; font-variant-numeric: tabular-nums; }
+.callout-divider { height: 1px; background: rgba(255,255,255,0.10); margin: 8px 0; }
+.callout-meta { font-family: var(--mono); font-size: 11px; color: var(--silver); margin-top: 4px; }
+```
+
+### 10.4 Side drawer (`drawer` + `drawer-backdrop`)
+
+Slides in from the right (desktop) or up from the bottom (mobile) when a cell is clicked, showing the full manifest. Backdrop dims the page; click-backdrop or `Esc` closes.
+
+**HTML:**
+
+```html
+<div class="drawer-backdrop" id="backdrop" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <button class="drawer-close" onclick="closeDrawer()" aria-label="Close cell manifest panel">×</button>
+  <div class="label">Cell manifest</div>
+  <h3 id="drawer-title">Cell</h3>
+  <div class="sub" id="drawer-sub">—</div>
+  <!-- Sections populated by JS:
+       Result (cL, ±1σ, 95% CI), Run (wall, n_steps, accept, mean_R, finished),
+       Settings (chi, pbc, estimator). Each as .drawer-section with .stitle + .drawer-kv rows. -->
+</div>
+```
+
+**CSS:**
+
+```css
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 440px;
+  background: var(--ivory); border-left: 1px solid var(--border-warm);
+  box-shadow: -10px 0 32px rgba(20,20,19,0.08);
+  transform: translateX(100%);
+  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  z-index: 100; overflow-y: auto; padding: 28px 32px;
+}
+.drawer.open { transform: translateX(0); }
+.drawer-close { position: absolute; top: 18px; right: 22px; background: none; border: none; cursor: pointer; color: var(--stone); font-size: 22px; line-height: 1; }
+.drawer-close:hover { color: var(--near-black); }
+.drawer .label { font-family: var(--sans); font-size: 10px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: var(--terracotta); margin-bottom: 8px; }
+.drawer h3 { font-family: var(--serif); font-weight: 500; font-size: 22px; line-height: 1.20; color: var(--near-black); margin: 0 0 6px; }
+.drawer .sub { font-family: var(--mono); font-size: 11px; color: var(--stone); margin-bottom: 22px; word-break: break-all; }
+.drawer-section { margin-bottom: 22px; }
+.drawer-section .stitle { font-family: var(--sans); font-size: 11px; font-weight: 500; letter-spacing: 0.10em; text-transform: uppercase; color: var(--olive); margin-bottom: 10px; }
+.drawer-kv { display: flex; justify-content: space-between; padding: 8px 0; font-family: var(--sans); font-size: 13.5px; color: var(--charcoal); border-bottom: 1px solid var(--border-cream); }
+.drawer-kv b { font-family: var(--mono); font-weight: 400; color: var(--near-black); font-variant-numeric: tabular-nums; }
+
+.drawer-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(20,20,19,0.18);
+  opacity: 0; pointer-events: none;
+  transition: opacity 280ms ease; z-index: 99;
+}
+.drawer-backdrop.show { opacity: 1; pointer-events: auto; }
+```
+
+Mobile bottom-sheet variant: see §12 Responsive behavior.
+
+### 10.5 Panel card (`panel-card`)
+
+The container for each side-by-side panel (paper figure on the left, our reproduction on the right).
+
+**HTML:**
+
+```html
+<div class="duo">
+  <div class="panel-card">
+    <div class="panel-head">
+      <span class="label ref">Reference · the paper</span>
+      <span class="source">arXiv:2305.18541 · Fig 4(a)</span>
+    </div>
+    <h2 class="panel-title">Tarabunga et al., 2023.</h2>
+    <div class="paper-img-wrap">
+      <img src="data:image/png;base64,..." alt="Paper Figure 4(a) showing c_L vs h" />
+    </div>
+    <div class="paper-cap">…one-sentence caption…</div>
+  </div>
+  <div class="panel-card">
+    <!-- our interactive plot panel -->
+  </div>
+</div>
+```
+
+**CSS:**
+
+```css
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+.panel-card {
+  background: var(--ivory);
+  border: 1px solid var(--border-cream);
+  border-radius: 24px;
+  padding: 24px 26px 18px;
+  box-shadow: 0 0 0 1px var(--border-cream), 0 6px 32px rgba(20,20,19,0.05);
+  position: relative;
+  display: flex; flex-direction: column;
+}
+.panel-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 14px;
+  font-family: var(--sans);
+}
+.panel-head .label { font-size: 10px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--terracotta); }
+.panel-head .label.ref { color: var(--olive); }
+.panel-head .source { font-family: var(--mono); font-size: 10.5px; color: var(--stone); }
+.panel-title {
+  font-family: var(--serif); font-weight: 500; font-size: 16px; line-height: 1.30;
+  color: var(--near-black); margin: 0 0 14px;
+  letter-spacing: -0.005em;
+}
+.paper-img-wrap {
+  background: #fff; border: 1px solid var(--border-cream); border-radius: 12px;
+  padding: 18px 22px; flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 360px;
+}
+.paper-img-wrap img { max-width: 100%; height: auto; display: block; image-rendering: -webkit-optimize-contrast; }
+.paper-cap {
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-cream);
+  font-family: var(--sans); font-size: 12.5px; line-height: 1.6; color: var(--olive);
+}
+.paper-cap b { color: var(--near-black); font-weight: 500; }
+```
+
+`.duo` collapses to single column on mobile (per §12).
+
+### 10.6 Contract grid (`ctr`)
+
+Renders `protocol.toml` sections (sources, scope, claims, deviations, budget) as a 2-column label/value grid in the below-fold "Contract" panel.
+
+**HTML:**
+
+```html
+<div class="ctr">
+  <div class="k">Source</div>
+  <div class="v"><span class="pill">arXiv:2305.18541</span><span class="pill">PRX Quantum 4, 040317</span></div>
+  <div class="k">Claims</div>
+  <div class="v">
+    <div class="claim-line-c"><span class="id">fig4.shape</span><span class="stmt">…claim statement…</span></div>
+  </div>
+</div>
+```
+
+**CSS:**
+
+```css
+.ctr { display: grid; grid-template-columns: 110px 1fr; gap: 10px 20px; font-family: var(--sans); font-size: 13px; }
+.ctr .k { font-size: 10px; font-weight: 500; letter-spacing: 0.10em; text-transform: uppercase; color: var(--olive); padding-top: 4px; }
+.ctr .v { color: var(--charcoal); line-height: 1.55; }
+.ctr .v .pill {
+  display: inline-block; font-family: var(--mono); font-size: 11px;
+  background: var(--sand); border: 1px solid var(--ring-warm);
+  border-radius: 4px; padding: 1px 7px; margin: 2px 4px 2px 0;
+  color: var(--charcoal);
+}
+.ctr .v .claim-line-c { padding: 6px 0; border-bottom: 1px dashed var(--border-cream); display: flex; gap: 10px; align-items: baseline; }
+.ctr .v .claim-line-c:last-child { border-bottom: none; }
+.ctr .v .claim-line-c .id { font-family: var(--mono); font-size: 10.5px; color: var(--stone); flex-shrink: 0; width: 130px; }
+.ctr .v .claim-line-c .stmt { color: var(--near-black); font-family: var(--serif); font-size: 14px; line-height: 1.45; }
+```
+
+### 10.7 Toggle pill (`toggle`)
+
+Small pill button used for figure-level toggles like "Match paper y-window".
+
+```html
+<button class="toggle on" id="toggle-paper">
+  <span class="swatch"></span> Paper's range
+</button>
+```
+
+```css
+.toggle {
+  font-family: var(--sans); font-size: 11.5px; font-weight: 500;
+  background: var(--parchment); border: 1px solid var(--border-warm);
+  color: var(--charcoal); border-radius: 999px; padding: 5px 12px;
+  cursor: pointer; transition: all 160ms ease;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.toggle:hover { background: var(--sand); }
+.toggle.on { background: var(--near-black); color: var(--ivory); border-color: var(--near-black); }
+.toggle .swatch { width: 10px; height: 10px; border-radius: 2px; background: rgba(94,93,89,0.10); border: 1px solid var(--silver); }
+.toggle.on .swatch { background: var(--ivory); border-color: var(--ivory); opacity: 0.6; }
+```
+
+### 10.8 Legend item (`legend-item`)
+
+Each curve's legend row, with focus/dim hover behavior across `.curve, .pt, .errbar, .legend-item` sharing the same `data-l` (or `data-curve`) attribute.
+
+```html
+<div class="legend-row" id="legend">
+  <div class="legend-item" data-l="64">
+    <span class="legend-swatch" style="background:#c96442;"></span>
+    L = 64
+    <span class="legend-val">-0.17</span>
+  </div>
+</div>
+```
+
+```css
+.legend-row { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-cream); }
+.legend-item {
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 12px; border-radius: 18px; cursor: pointer;
+  font-family: var(--sans); font-size: 13px; color: var(--charcoal);
+  transition: background 150ms ease, opacity 150ms ease;
+}
+.legend-item:hover { background: var(--sand); }
+.legend-item.dim { opacity: 0.40; }
+.legend-swatch { width: 18px; height: 3px; border-radius: 2px; }
+.legend-val { font-family: var(--mono); font-size: 12px; color: var(--stone); }
+```
+
+JS: on `mouseenter` of a `.legend-item`, add `.dim` to all `.curve, .pt, .errbar, .legend-item` whose `data-l` differs, and `.focus` to those whose `data-l` matches. On `mouseleave`, remove all classes.

@@ -201,7 +201,6 @@ External/support skills:
 
 - CLI tools: `tools/cli/` — atomic shell scripts
 - Flow state: `tools/flow/` — generic Rust gate ledger for multi-gate, multi-agent, or remote workflows. It records append-only `progress/events.jsonl` and derives `progress/state.toml`; use one child flow per independent paper/run and a parent flow only for aggregate campaign gates.
-- MCP tools: `tools/mcp/` — Claude-callable wrappers
 - Skills: `tools/skills/` — conversational workflows (managed by Ion)
 - Cluster profiles: `tools/cluster/` — per-cluster defaults (partitions, sbatch idioms, modules) consulted by cluster-aware skills via `tools/cluster/active.md` symlink or `HARNESS_CLUSTER_PROFILE=<name>` env var. Skills stay cluster-agnostic; cluster specifics live in profile cards.
 

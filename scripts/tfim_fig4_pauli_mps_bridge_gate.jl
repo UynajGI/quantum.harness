@@ -7,8 +7,8 @@
 using Printf
 using JSON
 
-include(joinpath(@__DIR__, "..", "..", "scripts", "tfim_fig4_paper_grade.jl"))
-include(joinpath(@__DIR__, "pauli_mps_sampler.jl"))
+include(joinpath(@__DIR__, "tfim_fig4_paper_grade.jl"))
+include(joinpath(@__DIR__, "..", "tools", "cli", "pauli_mps_sampler.jl"))
 include(joinpath(@__DIR__, "tfim_fig4_diagnose_eq24.jl"))
 
 function exact_cL_from_wht(L::Int, h::Float64)
@@ -23,7 +23,7 @@ function exact_cL_reference(L::Int, h::Float64)
     ref_env = strip(get(ENV, "FIG4_GATE_REFERENCE", ""))
     ref_path = !isempty(ref_env) ? ref_env :
         (L == 16 && isapprox(h, 0.80; atol=1e-12) ?
-         joinpath(@__DIR__, "..", "..", "results", "tfim_fig4_paper_grade",
+         joinpath(@__DIR__, "..", "results", "tfim_fig4_paper_grade",
                   "trusted_reference_L16_h0.80.json") : "")
     if !isempty(ref_path) && isfile(ref_path)
         ref = JSON.parsefile(ref_path)

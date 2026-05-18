@@ -13,9 +13,9 @@ using Printf
 using Random
 using Statistics
 
-include(joinpath(@__DIR__, "..", "..", "scripts", "tfim_fig4_paper_grade.jl"))
+include(joinpath(@__DIR__, "tfim_fig4_paper_grade.jl"))
 
-const DEFAULT_OUTDIR = joinpath(@__DIR__, "..", "..", "results", "tfim_fig4_cached_direct")
+const DEFAULT_OUTDIR = joinpath(@__DIR__, "..", "results", "tfim_fig4_cached_direct")
 const DIRECT_SCRIPT_PATH = normpath(@__FILE__)
 const DIRECT_SCRIPT_HASH = bytes2hex(sha256(read(DIRECT_SCRIPT_PATH)))
 

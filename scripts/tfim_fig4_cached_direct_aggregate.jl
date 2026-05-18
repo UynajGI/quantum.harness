@@ -3,7 +3,7 @@ using Plots
 using Printf
 using SHA
 
-include(joinpath(@__DIR__, "harness_cell_config.jl"))
+include(joinpath(@__DIR__, "..", "tools", "cli", "harness_cell_config.jl"))
 
 const PRODUCER_SCRIPT_PATH = normpath(joinpath(@__DIR__, "tfim_fig4_cached_direct.jl"))
 const PRODUCER_SCRIPT_HASH = bytes2hex(sha256(read(PRODUCER_SCRIPT_PATH)))

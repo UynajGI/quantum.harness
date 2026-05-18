@@ -19,9 +19,9 @@ CLAUDE.md
 # Claude runtime state
 .claude/scheduled_tasks.lock
 .claude/cache/
-/scripts/
+scripts/_*
 /results/
+/tmp/
 __pycache__/
 target/
-.claude/skills/ion-cli
 .superpowers/

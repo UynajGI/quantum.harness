@@ -2,7 +2,7 @@
 
 using Printf
 
-include(joinpath(@__DIR__, "..", "..", "scripts", "tfim_fig4_paper_grade.jl"))
+include(joinpath(@__DIR__, "tfim_fig4_paper_grade.jl"))
 
 function main()
     L = 6

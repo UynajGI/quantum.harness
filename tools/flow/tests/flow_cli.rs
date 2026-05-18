@@ -158,15 +158,15 @@ requires = ["source"]
     assert_eq!(copied, template_text);
     let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
     assert!(status.contains("copied_template"));
-    assert!(status.lines().any(|line| line == "source\tpending"));
+    assert!(status.lines().any(|line| line.starts_with("source\t")));
 }
 
 #[test]
-fn attempt_finish_pass_records_provenance_and_unblocks_next_gate() {
+fn attempt_finish_passes_with_no_declared_checks() {
+    // No protocol.toml = no checks declared = trivial pass.
     let root = tmp_dir("attempt");
     let template = root.join("template.toml");
     let run_dir = root.join("run");
-    let report = run_dir.join("verify").join("ideas.md");
     write(
         &template,
         r#"
@@ -178,7 +178,6 @@ id = "critic"
 requires = ["ideas"]
 "#,
     );
-    write(&report, "ideas accepted\n");
 
     assert_ok(&[
         "init",
@@ -204,10 +203,6 @@ requires = ["ideas"]
         "finish",
         run_dir.to_str().unwrap(),
         attempt,
-        "--status",
-        "pass",
-        "--report",
-        report.to_str().unwrap(),
     ]);
 
     assert_ok(&["require", run_dir.to_str().unwrap(), "ideas"]);
@@ -220,9 +215,7 @@ fn artifact_hash_change_invalidates_downstream_gates() {
     let root = tmp_dir("invalidate");
     let template = root.join("template.toml");
     let run_dir = root.join("run");
-    let protocol = run_dir.join("protocol.toml");
-    let report = run_dir.join("verify").join("protocol.md");
-    let plan_report = run_dir.join("verify").join("plan.md");
+    let protocol = run_dir.join("protocol_doc.toml");
     write(
         &template,
         r#"
@@ -240,8 +233,6 @@ requires = ["plan"]
 "#,
     );
     write(&protocol, "claim = 1\n");
-    write(&report, "protocol verified\n");
-    write(&plan_report, "plan verified\n");
 
     assert_ok(&[
         "init",
@@ -255,9 +246,9 @@ requires = ["plan"]
         run_dir.to_str().unwrap(),
         "protocol",
         "--kind",
-        "verify",
+        "produce",
         "--actor",
-        "agent:source-verifier",
+        "agent:author",
     ]);
     assert_ok(&[
         "artifact",
@@ -277,10 +268,6 @@ requires = ["plan"]
         "finish",
         run_dir.to_str().unwrap(),
         attempt.trim(),
-        "--status",
-        "pass",
-        "--report",
-        report.to_str().unwrap(),
     ]);
 
     let plan_attempt = assert_ok(&[
@@ -289,19 +276,15 @@ requires = ["plan"]
         run_dir.to_str().unwrap(),
         "plan",
         "--kind",
-        "verify",
+        "produce",
         "--actor",
-        "agent:plan-verifier",
+        "agent:planner",
     ]);
     assert_ok(&[
         "attempt",
         "finish",
         run_dir.to_str().unwrap(),
         plan_attempt.trim(),
-        "--status",
-        "pass",
-        "--report",
-        plan_report.to_str().unwrap(),
     ]);
 
     write(&protocol, "claim = 2\n");
@@ -311,9 +294,9 @@ requires = ["plan"]
         run_dir.to_str().unwrap(),
         "protocol",
         "--kind",
-        "verify",
+        "produce",
         "--actor",
-        "agent:source-verifier",
+        "agent:author",
     ]);
     assert_ok(&[
         "artifact",
@@ -331,16 +314,12 @@ requires = ["plan"]
         "finish",
         run_dir.to_str().unwrap(),
         repair.trim(),
-        "--status",
-        "pass",
-        "--report",
-        report.to_str().unwrap(),
     ]);
 
     let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
-    assert!(status.lines().any(|line| line == "protocol\tpassed"));
-    assert!(status.lines().any(|line| line == "plan\tinvalidated"));
-    assert!(status.lines().any(|line| line == "script\tinvalidated"));
+    assert!(status.lines().any(|line| line.starts_with("protocol\tpassed")));
+    assert!(status.lines().any(|line| line.starts_with("plan\tinvalidated")));
+    assert!(status.lines().any(|line| line.starts_with("script\tinvalidated")));
 }
 
 #[test]
@@ -366,15 +345,11 @@ fn held_lock_blocks_second_writer() {
 }
 
 #[test]
-fn stale_attempt_cannot_overwrite_newer_gate_result() {
+fn stale_attempt_cannot_finish_after_newer_one_finished() {
     let root = tmp_dir("stale-attempt");
     let template = root.join("template.toml");
     let run_dir = root.join("run");
-    let report_pass = run_dir.join("verify").join("pass.md");
-    let report_fail = run_dir.join("verify").join("fail.md");
     write(&template, "[[gates]]\nid = \"verify\"\n");
-    write(&report_pass, "accepted\n");
-    write(&report_fail, "rejected\n");
 
     assert_ok(&[
         "init",
@@ -408,20 +383,12 @@ fn stale_attempt_cannot_overwrite_newer_gate_result() {
         "finish",
         run_dir.to_str().unwrap(),
         new.trim(),
-        "--status",
-        "pass",
-        "--report",
-        report_pass.to_str().unwrap(),
     ]);
     let err = assert_fail(&[
         "attempt",
         "finish",
         run_dir.to_str().unwrap(),
         old.trim(),
-        "--status",
-        "fail",
-        "--report",
-        report_fail.to_str().unwrap(),
     ]);
     assert!(err.contains("stale attempt"));
     assert_ok(&["require", run_dir.to_str().unwrap(), "verify"]);
@@ -433,7 +400,6 @@ fn artifact_invalidation_uses_producer_gate_and_dependency_closure() {
     let template = root.join("template.toml");
     let run_dir = root.join("run");
     let source = run_dir.join("sources").join("paper.md");
-    let report = run_dir.join("verify").join("source.md");
     write(
         &template,
         r#"
@@ -450,7 +416,6 @@ requires = ["plan"]
 "#,
     );
     write(&source, "paper passage\n");
-    write(&report, "source verified\n");
 
     assert_ok(&[
         "init",
@@ -464,9 +429,9 @@ requires = ["plan"]
         run_dir.to_str().unwrap(),
         "source",
         "--kind",
-        "verify",
+        "produce",
         "--actor",
-        "agent:source-verifier",
+        "agent:source-author",
     ]);
     assert_ok(&[
         "artifact",
@@ -484,10 +449,6 @@ requires = ["plan"]
         "finish",
         run_dir.to_str().unwrap(),
         attempt.trim(),
-        "--status",
-        "pass",
-        "--report",
-        report.to_str().unwrap(),
     ]);
 
     assert_ok(&[
@@ -498,9 +459,9 @@ requires = ["plan"]
     ]);
 
     let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
-    assert!(status.lines().any(|line| line == "source\tinvalidated"));
-    assert!(status.lines().any(|line| line == "plan\tinvalidated"));
-    assert!(status.lines().any(|line| line == "script\tinvalidated"));
+    assert!(status.lines().any(|line| line.starts_with("source\tinvalidated")));
+    assert!(status.lines().any(|line| line.starts_with("plan\tinvalidated")));
+    assert!(status.lines().any(|line| line.starts_with("script\tinvalidated")));
 }
 
 #[test]
@@ -534,4 +495,231 @@ fn parent_flow_tracks_child_flows_recursively() {
     let status = assert_ok(&["status", parent.to_str().unwrap(), "--recursive"]);
     assert!(status.contains("children"));
     assert!(status.contains("paper-a"));
+}
+
+#[test]
+fn check_passes_when_protocol_declares_no_checks_for_gate() {
+    let root = tmp_dir("check-empty");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"source\"\n");
+
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+    let stdout = assert_ok(&["check", run_dir.to_str().unwrap(), "source"]);
+    assert!(stdout.lines().any(|line| line == "status\tpassed"));
+}
+
+#[test]
+fn check_runs_declared_run_kind_and_fails_on_nonzero_exit() {
+    let root = tmp_dir("check-run");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"source\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "always_fail"
+kind = "run"
+gate = "source"
+cmd = "exit 1"
+"#,
+    );
+
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    let err = assert_fail(&["check", run_dir.to_str().unwrap(), "source"]);
+    assert!(err.is_empty() || err.contains("status"), "stderr: {err}");
+}
+
+#[test]
+fn override_records_event_and_satisfies_failing_check() {
+    let root = tmp_dir("override");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"source\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "always_fail"
+kind = "run"
+gate = "source"
+cmd = "exit 1"
+"#,
+    );
+
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    // Before override, check fails.
+    let pre = run(&["check", run_dir.to_str().unwrap(), "source"]);
+    assert!(!pre.status.success());
+
+    assert_ok(&[
+        "override",
+        run_dir.to_str().unwrap(),
+        "always_fail",
+        "--reason",
+        "draft for Slack today",
+    ]);
+
+    // After override, check passes.
+    let stdout = assert_ok(&["check", run_dir.to_str().unwrap(), "source"]);
+    assert!(stdout.lines().any(|line| line == "status\tpassed"));
+    assert!(stdout.lines().any(|line| line.contains("overridden")));
+
+    // State.toml shows the override.
+    let state = fs::read_to_string(run_dir.join("progress").join("state.toml")).unwrap();
+    assert!(state.contains("always_fail"));
+    assert!(state.contains("draft for Slack today"));
+}
+
+#[test]
+fn audit_check_rejects_self_verification() {
+    let root = tmp_dir("audit-self");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"protocol\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "protocol_audit"
+kind = "audit"
+gate = "protocol"
+"#,
+    );
+
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    // Author produces; same actor "verifies" → audit fails.
+    let producer = assert_ok(&[
+        "attempt",
+        "start",
+        run_dir.to_str().unwrap(),
+        "protocol",
+        "--kind",
+        "produce",
+        "--actor",
+        "agent:author",
+    ]);
+    assert_ok(&[
+        "attempt",
+        "finish",
+        run_dir.to_str().unwrap(),
+        producer.trim(),
+    ]);
+
+    let verifier = assert_ok(&[
+        "attempt",
+        "start",
+        run_dir.to_str().unwrap(),
+        "protocol",
+        "--kind",
+        "verify",
+        "--actor",
+        "agent:author", // SAME actor — should fail audit
+    ]);
+    let report = run_dir.join("verify").join("self.md");
+    write(&report, "self review\n");
+    assert_ok(&[
+        "attempt",
+        "finish",
+        run_dir.to_str().unwrap(),
+        verifier.trim(),
+        "--report",
+        report.to_str().unwrap(),
+    ]);
+
+    // Status should now reflect audit failure.
+    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
+    assert!(status.lines().any(|line| line.starts_with("protocol\tfailed")));
+}
+
+#[test]
+fn audit_check_passes_with_distinct_actor() {
+    let root = tmp_dir("audit-distinct");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"protocol\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "protocol_audit"
+kind = "audit"
+gate = "protocol"
+"#,
+    );
+
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    let producer = assert_ok(&[
+        "attempt",
+        "start",
+        run_dir.to_str().unwrap(),
+        "protocol",
+        "--kind",
+        "produce",
+        "--actor",
+        "agent:author",
+    ]);
+    assert_ok(&[
+        "attempt",
+        "finish",
+        run_dir.to_str().unwrap(),
+        producer.trim(),
+    ]);
+
+    let verifier = assert_ok(&[
+        "attempt",
+        "start",
+        run_dir.to_str().unwrap(),
+        "protocol",
+        "--kind",
+        "verify",
+        "--actor",
+        "agent:independent-reviewer",
+    ]);
+    let report = run_dir.join("verify").join("independent.md");
+    write(&report, "independent review\n");
+    assert_ok(&[
+        "attempt",
+        "finish",
+        run_dir.to_str().unwrap(),
+        verifier.trim(),
+        "--report",
+        report.to_str().unwrap(),
+    ]);
+
+    assert_ok(&["require", run_dir.to_str().unwrap(), "protocol"]);
 }

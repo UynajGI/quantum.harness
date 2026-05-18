@@ -65,6 +65,35 @@ def load_editorial(run_dir: Path) -> dict:
     return {"headline": None, "claims": [], "deviations": [], "figures": [], "glossary": [], "gaps": []}
 
 
+def load_overrides(run_dir: Path) -> list[dict]:
+    """Read user-confirmed check bypasses from flow's append-only event log.
+
+    Each override is { check, gate, reason, actor, at }. Reports surface ⊘
+    chips and a banner when this list is non-empty. Clean runs return [].
+    """
+    events = run_dir / "progress" / "events.jsonl"
+    if not events.exists():
+        return []
+    out: list[dict] = []
+    for line in events.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if e.get("event") == "override_recorded":
+            out.append({
+                "check": e.get("check", ""),
+                "gate": e.get("gate", ""),
+                "reason": e.get("reason", ""),
+                "actor": e.get("actor", ""),
+                "at": e.get("at", ""),
+            })
+    return out
+
+
 _GREEK = {
     "alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ",
     "epsilon": "ε", "zeta": "ζ", "eta": "η", "theta": "θ",
@@ -77,23 +106,8 @@ _GREEK = {
 }
 
 
-def render_inline_markup(text: str) -> str:
-    """Escape HTML, then convert ASCII LaTeX-style markup to HTML/Unicode.
-
-    Conversions (in order):
-      [[key|display]]  -> <span class="sym" data-term="key">{rendered display}</span>
-      *italic*         -> <em>italic</em>
-      _{XX}            -> <sub>XX</sub>
-      _X               -> <sub>X</sub>           (single alnum, not snake_case)
-      ^{XX}            -> <sup>XX</sup>
-      ^X               -> <sup>X</sup>
-      Greek words      -> Unicode (alpha→α, chi→χ, ...)
-      <=, >=, !=, +/-  -> ≤, ≥, ≠, ±
-      \approx, ~=      -> ≈
-    """
-    if not text:
-        return ""
-    t = html.escape(text)
+def _apply_text_markup(t: str) -> str:
+    """Inline markup passes for plain text (no glossary tokens, no placeholders)."""
     t = re.sub(r"_\{([^}]+)\}", r"<sub>\1</sub>", t)
     t = re.sub(r"_([A-Za-z0-9])(?![A-Za-z0-9])", r"<sub>\1</sub>", t)
     t = re.sub(r"\^\{([^}]+)\}", r"<sup>\1</sup>", t)
@@ -103,17 +117,44 @@ def render_inline_markup(text: str) -> str:
     t = t.replace("&lt;=", "≤").replace("&gt;=", "≥")
     t = t.replace("!=", "≠").replace(" +/- ", " ± ").replace("+/-", "±")
     t = t.replace("\\approx", "≈").replace("~=", "≈")
-    # Italics: *word* -> <em>word</em>. Avoid greedy matches and matching across
-    # newlines or spaces-only.
     t = re.sub(r"\*([^*\s][^*\n]*?[^*\s]|[^*\s])\*", r"<em>\1</em>", t)
-    # Glossary symbol wrapping (post-pass; the inner display has already had
-    # sub/sup/Greek expansion applied by the regexes above, so [[cl|c_L(h)]]
-    # here is actually [[cl|c<sub>L</sub>(h)]]).
-    t = re.sub(
-        r"\[\[([A-Za-z][A-Za-z0-9_]*)\|([^\]]+)\]\]",
-        r'<span class="sym" data-term="\1">\2</span>',
-        t,
-    )
+    return t
+
+
+def render_inline_markup(text: str) -> str:
+    """Escape HTML, then convert ASCII LaTeX-style markup to HTML/Unicode.
+
+    Conversions:
+      [[key|display]]  -> <span class="sym" data-term="key">{rendered display}</span>
+      *italic*         -> <em>italic</em>
+      _{XX}, _X        -> <sub>...</sub>
+      ^{XX}, ^X        -> <sup>...</sup>
+      Greek words      -> Unicode (alpha→α, chi→χ, ...)
+      <=, >=, !=, +/-  -> ≤, ≥, ≠, ±
+      \approx, ~=      -> ≈
+
+    Glossary tokens are extracted to placeholders before any other pass so that
+    the ASCII key is preserved (Greek expansion on a bare `alpha` would
+    otherwise corrupt the data-term attribute via \b{word}\b).
+    """
+    if not text:
+        return ""
+    t = html.escape(text)
+    placeholders: list[str] = []
+
+    def _stash(m: re.Match) -> str:
+        key = m.group(1)
+        disp_rendered = _apply_text_markup(m.group(2))
+        idx = len(placeholders)
+        placeholders.append(
+            f'<span class="sym" data-term="{html.escape(key)}">{disp_rendered}</span>'
+        )
+        return f"\x00GLOSS{idx}\x00"
+
+    t = re.sub(r"\[\[([A-Za-z][A-Za-z0-9_]*)\|([^\]]+)\]\]", _stash, t)
+    t = _apply_text_markup(t)
+    for i, span in enumerate(placeholders):
+        t = t.replace(f"\x00GLOSS{i}\x00", span)
     return t
 
 
@@ -150,14 +191,15 @@ def claim_status_from_verify(claim_id: str, run_dir: Path) -> str:
     return "muted"
 
 
-def status_strip_html(protocol: dict, editorial: dict, run_dir: Path) -> str:
-    """Build the status-strip chips from claims, checks, deviations, and pending.
+def status_strip_html(protocol: dict, editorial: dict, run_dir: Path, overrides: list[dict]) -> str:
+    """Build the status-strip chips from claims, checks, deviations, overrides, pending.
 
-    Chip taxonomy (in render order, capped at 8 visible total):
+    Chip taxonomy (render order):
       1. claims     — one per [[claims]], status from verify report
-      2. checks     — one per [[checks]] tagged for the strip (status from verify)
-      3. deviations — one per [[deviations]], always warn
-      4. pending    — one per [[pending]], always muted
+      2. checks     — one per [[checks]] flagged for the strip
+      3. deviations — one per [[deviations]], warn (⚠ via class)
+      4. overrides  — one per recorded flow override, warn with ⊘ prefix
+      5. pending    — one per [[pending]], muted
     """
     claims = protocol.get("claims", [])
     checks = protocol.get("checks", [])
@@ -179,10 +221,7 @@ def status_strip_html(protocol: dict, editorial: dict, run_dir: Path) -> str:
         popover = ed.get("popover") or c.get("statement", "")
         chips.append(chip_for(status, label, popover))
 
-    # Only checks marked report=true (or whose kind is one of the audience-facing
-    # kinds) get a chip — internal mechanical checks (manifest_fields, freshness)
-    # are not chip-worthy.
-    AUDIENCE_KINDS = {"command", "trusted_reference", "limit", "symmetry", "cross_method"}
+    AUDIENCE_KINDS = {"audit", "run", "near"}
     for ch in checks:
         if not (ch.get("report") or ch.get("kind") in AUDIENCE_KINDS):
             continue
@@ -202,6 +241,11 @@ def status_strip_html(protocol: dict, editorial: dict, run_dir: Path) -> str:
         popover = ed.get("popover") or d.get("statement", "")
         chips.append(chip_for("warn", label, popover))
 
+    for o in overrides[:3]:
+        label = f"⊘ {o['check']}"
+        popover = f"{o['reason']} — bypassed by {o['actor']}"
+        chips.append(chip_for("warn", label, popover))
+
     for p in pending[:2]:
         pid = p.get("id", "")
         ed = ed_pending.get(pid, {})
@@ -214,19 +258,40 @@ def status_strip_html(protocol: dict, editorial: dict, run_dir: Path) -> str:
     return "\n    ".join(chips)
 
 
+def bypass_banner_html(overrides: list[dict]) -> str:
+    """Banner below the chip strip when the run shipped with bypasses.
+
+    Empty string on clean runs (zero overrides) — the visual delta drives the
+    "is this a strict ship?" signal at a glance.
+    """
+    if not overrides:
+        return ""
+    items = []
+    for o in overrides:
+        items.append(
+            f'<li><code>{html.escape(o["check"])}</code> — '
+            f'{render_inline_markup(o["reason"])} '
+            f'<span class="bypass-meta">(by {html.escape(o["actor"])})</span></li>'
+        )
+    return (
+        '<aside class="bypass-banner">\n'
+        f'  <span class="bypass-icon">⊘</span>\n'
+        f'  <div class="bypass-text">\n'
+        f'    <strong>This run shipped with {len(overrides)} bypassed check'
+        f'{"s" if len(overrides) != 1 else ""}.</strong>\n'
+        f'    <ul class="bypass-list">{"".join(items)}</ul>\n'
+        '  </div>\n'
+        '</aside>'
+    )
+
+
 def source_pill_label(s: dict, paper_id: str) -> str:
     """Best human label for a source pill.
 
-    Primary sources prefer the paper id (e.g. "arXiv:2305.18541") plus the venue
-    parsed from the note. KB-hint and other sources fall back to their `id`.
+    Primary sources collapse to the paper id (already shown as a separate pill);
+    the caller dedups against `paper_id`. Non-primary sources use their `id`.
     """
     if s.get("authority") == "primary":
-        # Try to extract a venue-like substring from note: text after the first ". "
-        note = s.get("note", "")
-        if ". " in note:
-            tail = note.split(". ", 1)[1].rstrip(". ")
-            if tail:
-                return tail
         return paper_id or s.get("id") or ""
     return s.get("id") or s.get("path") or ""
 
@@ -453,6 +518,7 @@ def main() -> int:
 
     protocol = load_toml(run_dir / "protocol.toml")
     editorial = load_editorial(run_dir)
+    overrides = load_overrides(run_dir)
     artifact = protocol.get("artifact", {})
 
     figures = protocol.get("figures", [])
@@ -481,8 +547,9 @@ def main() -> int:
     # Derive run_id, IDs, URLs
     run_id = artifact.get("run_id") or run_dir.name
     paper_id = artifact.get("paper", "")
-    arxiv_match = re.search(r"(\d{4}\.\d{5})", paper_id)
-    arxiv_id = arxiv_match.group(1) if arxiv_match else paper_id
+    # Match new-style (e.g. 2305.18541) or old-style (e.g. cond-mat/9507087) arXiv IDs.
+    arxiv_match = re.search(r"(\d{4}\.\d{4,5})|([a-z\-]+/\d{7})", paper_id)
+    arxiv_id = arxiv_match.group(0) if arxiv_match else paper_id.removeprefix("arXiv:")
 
     # Authors / title / venue: prefer explicit [artifact] fields; otherwise
     # try the first source's note ("Authors. Venue (year).").
@@ -552,32 +619,77 @@ def main() -> int:
     # polish subagent) → mechanical fallback derived from protocol shape.
     verdict_html = build_verdict_html(editorial, protocol)
 
-    # Build per-figure HTML blocks + collect data for the FIGURES JS array.
-    figures_js: list[dict] = []
+    # Expand multi-panel figures (axes = {main: {...}, inset: {...}}) into one
+    # virtual figure per panel. Each virtual figure shares the parent's paper
+    # image and editorial entry, but carries its own flat axes + filtered data.
+    expanded: list[dict] = []
     for f in figures_ordered:
+        data = None
         if f.get("data_path"):
             dp = resolve(f["data_path"], run_dir)
             if dp.exists():
-                figures_js.append(json.loads(dp.read_text()))
+                data = json.loads(dp.read_text())
             else:
                 print(f"[warn] data_path for figure {f['id']} not found: {dp}", file=sys.stderr)
-                figures_js.append({"label": f["id"], "axes": {}, "data": []})
-        else:
-            figures_js.append({"label": f["id"], "axes": {}, "data": []})
+        axes = (data or {}).get("axes", {}) or {}
+        items = (data or {}).get("data", []) or []
+        is_multi = (
+            isinstance(axes, dict)
+            and len(axes) >= 2
+            and all(isinstance(v, dict) and ("x" in v or "y" in v) for v in axes.values())
+        )
+        if not is_multi:
+            expanded.append({"fig": f, "label": f["id"], "fig_js": data or {"label": f["id"], "axes": {}, "data": []}, "panel_name": None})
+            continue
+        # Stable panel order: main first if present, else axes insertion order.
+        panel_names = (["main"] if "main" in axes else []) + [k for k in axes if k != "main"]
+        for panel_name in panel_names:
+            panel_axes = axes[panel_name]
+            # Kind synonyms: "main" matches kind in {None, "curve", "main"}.
+            if panel_name == "main":
+                panel_data = [d for d in items if d.get("kind") in (None, "curve", "main")]
+            else:
+                panel_data = [d for d in items if d.get("kind") == panel_name]
+            virtual_label = f["id"] if (panel_name == "main" and panel_names[0] == "main") else f"{f['id']}__{panel_name}"
+            expanded.append({
+                "fig": f,
+                "label": virtual_label,
+                "fig_js": {"label": virtual_label, "axes": panel_axes, "data": panel_data},
+                "panel_name": panel_name,
+            })
 
-    featured_fig = figures_ordered[0]
-    extras = figures_ordered[1:]
-    featured_html = figure_block_html(
-        featured_fig, ed_figs.get(featured_fig["id"], {}), paper_id, run_id, run_dir,
-        eyebrow=None,
-    )
-    if extras:
+    figures_js = [e["fig_js"] for e in expanded]
+
+    def _panel_block(entry: dict, eyebrow: str | None) -> str:
+        proto = entry["fig"]
+        # Build a synthetic figure dict carrying the virtual label so the svg
+        # id, callout id, and figures-js lookup match.
+        synth = dict(proto)
+        synth["id"] = entry["label"]
+        synth["display_id"] = entry["label"]
+        ed_for_panel = dict(ed_figs.get(proto["id"], {}))
+        if entry["panel_name"] and entry["panel_name"] != "main":
+            # Inset panels fall back to mechanical captions sourced from the
+            # parent's editorial. Drop the parent's captions so the renderer
+            # uses panel-specific fallbacks rather than misattributing them.
+            ed_for_panel["caption_paper"] = ed_for_panel.get(f"caption_paper_{entry['panel_name']}") or ""
+            ed_for_panel["caption_ours"] = ed_for_panel.get(f"caption_ours_{entry['panel_name']}") or ""
+            ed_for_panel["paper_context"] = ""
+        return figure_block_html(
+            synth, ed_for_panel, paper_id, run_id, run_dir, eyebrow=eyebrow,
+        )
+
+    featured_entry = expanded[0]
+    extras_entries = expanded[1:]
+    featured_html = _panel_block(featured_entry, eyebrow=None)
+    if extras_entries:
         extra_blocks = []
-        for i, f in enumerate(extras, start=2):
-            eyebrow = f"Figure {i} of {len(figures_ordered)} · {f.get('display_id') or f['id']}"
-            extra_blocks.append(figure_block_html(
-                f, ed_figs.get(f["id"], {}), paper_id, run_id, run_dir, eyebrow=eyebrow,
-            ))
+        for i, e in enumerate(extras_entries, start=2):
+            if e["panel_name"] and e["panel_name"] != "main":
+                eyebrow = f"Inset · {e['panel_name']}"
+            else:
+                eyebrow = f"Figure {i} of {len(expanded)} · {e['label']}"
+            extra_blocks.append(_panel_block(e, eyebrow=eyebrow))
         extra_section = (
             '<section class="extra-figs">\n' + "\n\n".join(extra_blocks) + '\n</section>'
         )
@@ -595,7 +707,8 @@ def main() -> int:
         "__VERDICT_HTML__": verdict_html,
         "__FEATURED_FIG_HTML__": featured_html,
         "__EXTRA_FIGS_SECTION__": extra_section,
-        "__STATUS_STRIP_HTML__": status_strip_html(protocol, editorial, run_dir),
+        "__STATUS_STRIP_HTML__": status_strip_html(protocol, editorial, run_dir, overrides),
+        "__BYPASS_BANNER_HTML__": bypass_banner_html(overrides),
         "__CONTRACT_HTML__": contract_html(protocol),
         "__DISCREPANCY_HEADLINE__": render_inline_markup(discrepancy_headline),
         "__DISCREPANCY_HTML__": discrepancy_html(protocol.get("deviations", []), editorial),

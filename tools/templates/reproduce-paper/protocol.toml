@@ -1,8 +1,8 @@
 # Generic /reproduce-paper protocol template.
 #
 # This file is paper-agnostic. Claim ids and statements are authored from the
-# primary source for the requested reproduction. /reproduce-paper treats them as
-# opaque obligations and only knows how to run mechanical checks.
+# primary source for the requested reproduction. Flow treats them as opaque
+# obligations and only evaluates the declared [[checks]] mechanically.
 
 [artifact]
 paper = ""             # arXiv id, DOI, or short paper id (e.g. "arXiv:2305.18541")
@@ -12,118 +12,110 @@ venue = ""             # journal/year string (e.g. "PRX Quantum 4, 040317 (2023)
 scope = "full-paper"   # full-paper | main-results | figure-subset | custom
 run_id = ""
 description = ""
-author = ""            # the agent or human running the reproduction
-last_material_edit = ""
 
 [[sources]]
 id = "paper"
-kind = "primary" # primary | supplement | official-code | official-data | kb-hint | prior-artifact
+kind = "paper"         # paper | supplement | official-code | official-data | kb-card | prior-artifact | analytic-reference
+authority = "primary"  # primary | trusted_reference | hint
 path = ""
 note = ""
 
 # Only paper/supplement/official-code/official-data sources may support primary
-# claims directly. KB hints, scripts, and prior artifacts are cached evidence;
-# they require confirmation against a primary source or an explicit assumption.
+# claims. KB hints, scripts, and prior artifacts are cached evidence; they
+# require confirmation against a primary source or an explicit assumption.
 
 [[claims]]
 id = "claim.example"
 statement = "Replace with a primary-source-derived obligation."
-scope = "run" # run | figure | panel | cell | artifact
+scope = "run"          # run | figure | panel | cell | artifact
 sources = ["paper"]
 assumption = false
 
+# ─── checks ──────────────────────────────────────────────────────────────────
+# Six generic kinds. Each names what the check does, never what artifact it
+# touches:
+#   audit   — a verify-kind attempt with an actor distinct from the producer
+#   run     — execute a shell command; exit 0 = pass
+#   exists  — declared paths/fields are present
+#   agree   — declared field values match across artifacts
+#   near    — numeric value within tolerance of a reference
+#   fresh   — artifact mtime ≥ source mtime
+# Paper-specific or skill-specific names belong in the data values (paths,
+# claims, ids) — never in the `kind` field.
+
 [[checks]]
-id = "source_audit"
-kind = "source_audit"
-gate = "preflight" # preflight | compute | assembly | report
+id = "protocol_audit"
+kind = "audit"
+gate = "protocol"
 claims = ["claim.example"]
 
 [[checks]]
-id = "protocol_independent_review"
-kind = "verify"
-gate = "preflight"
-mode = "protocol"
-artifact = "results/<run>/protocol.toml"
-against = ["paper"]
-requires_independent_reviewer = true
+id = "script_audit"
+kind = "audit"
+gate = "script"
 claims = ["claim.example"]
 
 [[checks]]
-id = "script_independent_review"
-kind = "verify"
-gate = "preflight"
-mode = "script"
-artifact = ""
-against = ["results/<run>/protocol.toml", "paper"]
-requires_independent_reviewer = true
+id = "production_manifests_complete"
+kind = "exists"
+gate = "production"
 claims = ["claim.example"]
+fields = [
+  "cells/cell-0001/manifest.json:protocol_hash",
+  "cells/cell-0001/manifest.json:script_hash",
+  "cells/cell-0001/manifest.json:claims",
+]
 
 [[checks]]
-id = "compute_manifest_fields"
-kind = "manifest_fields"
-gate = "compute"
-claims = ["claim.example"]
-fields = ["protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts"]
-
-[[checks]]
-id = "required_manifest_fields"
-kind = "manifest_fields"
+id = "manifest_protocol_consensus"
+kind = "agree"
 gate = "assembly"
 claims = ["claim.example"]
-fields = ["protocol_hash", "script_hash", "sources", "claims", "deviations", "artifacts"]
+against = [
+  "cells/cell-0001/manifest.json:protocol_hash",
+  "cells/cell-0002/manifest.json:protocol_hash",
+]
 
 [[checks]]
-id = "manifest_consensus"
-kind = "manifest_consensus"
+id = "artifacts_fresh"
+kind = "fresh"
 gate = "assembly"
 claims = ["claim.example"]
-fields = ["protocol_hash"]
+paths = ["figs/fig-example.png"]
+against = ["protocol.toml", "scripts/reproduce.jl"]
 
-[[checks]]
-id = "fresh_artifacts"
-kind = "freshness"
-gate = "assembly"
-claims = ["claim.example"]
-
-# Generic numeric comparisons declare selectors and tolerances as data. The
-# runner does not know what the selected quantity means.
 [[checks]]
 id = "trusted_reference_compare"
-kind = "numeric_compare"
-gate = "preflight"
+kind = "near"
+gate = "trusted_check"
 claims = ["claim.example"]
-runner = "tools/cli/harness_validate_numeric.jl"
 
   [[checks.compare]]
-  name = "replace with reference check name"
-  actual = { path = "cells/<cell_id>/manifest.json", field = "observable" }
+  actual = { path = "cells/cell-0001/manifest.json", field = "observable" }
   reference = { path = "references/reference.json", field = "observable_exact" }
-  uncertainty = { path = "cells/<cell_id>/manifest.json", field = "stderr" }
-  tolerance = { abs = 0.0, mode = "all" }
-
-# Domain-specific validation belongs behind command checks. The command should
-# produce machine-readable evidence, preferably JSON with status/pass/fail,
-# checked_claims, artifacts, and notes fields.
-[[checks]]
-id = "custom_command_check"
-kind = "command"
-gate = "preflight"
-claims = ["claim.example"]
-cmd = ""
-expect_status = "pass"
+  uncertainty = { path = "cells/cell-0001/manifest.json", field = "stderr" }
+  tolerance = { abs = 0.0 }
 
 [[checks]]
-id = "close_independent_review"
-kind = "verify"
-gate = "report"
-mode = "close"
-artifact = "results/<run>/run-report.md"
-against = ["results/<run>/protocol.toml", "results/<run>/manifests"]
-requires_independent_reviewer = true
+id = "close_audit"
+kind = "audit"
+gate = "close"
 claims = ["claim.example"]
 
-# Record deliberate differences from the paper instead of silently treating them
-# as equivalent.
+# Optional: domain-specific validation via a shell command (kind = "run").
+# The command should exit 0 on pass, nonzero on fail. Output is captured but
+# not interpreted — keep machine semantics in the exit code.
+# [[checks]]
+# id = "domain_specific"
+# kind = "run"
+# gate = "script"
+# claims = ["claim.example"]
+# cmd = "julia --project=julia-env scripts/check_domain.jl"
+
+# ─── deviations ──────────────────────────────────────────────────────────────
+# Record deliberate differences from the paper instead of silently treating
+# them as equivalent.
+
 [[deviations]]
 id = "deviation.example"
 statement = ""
@@ -131,38 +123,40 @@ reason = ""
 claims = []
 checks = []
 
+# ─── pending ─────────────────────────────────────────────────────────────────
 # Declare next obligations the run does NOT meet (cross-method check, larger
 # system size, longer runtime). /report renders one muted chip per [[pending]]
-# entry so readers see what's missing without scrolling. Prefer specific obligations
-# over vague aspirations.
+# entry so readers see what's missing without scrolling.
+
 [[pending]]
 id = "pending.example"
-statement = ""        # e.g. "Independent TTN run at L=128 to confirm c_L magnitude"
-reason = ""           # e.g. "TTN backend not yet wired in the harness"
+statement = ""         # e.g. "Independent TTN run at L=128 to confirm c_L magnitude"
+reason = ""            # e.g. "TTN backend not yet wired in the harness"
 
 [budgets]
 wall_clock = ""
 compute = ""
 notes = ""
 
-# Figure pointers consumed by /report (the report skill).
-# One block per panel/figure to be displayed side-by-side in the rendered HTML.
-# `paper_path` is the reference figure (from download-ref's .figures/);
-# `ours_path` is the reproduction's plot. `data_path` is optional — when present,
-# /report renders an interactive plot from it; when absent, only the static PNG.
-# `claim_ids` cross-references the [[claims]] this figure supports.
+# ─── figures ─────────────────────────────────────────────────────────────────
+# Figure pointers consumed by /report. One block per figure. `paper_path` is
+# the reference figure (from download-ref's .figures/); `ours_path` is the
+# reproduction's plot. `data_path` is optional — when present, /report renders
+# an interactive plot from it; when absent, only the static PNG. `claim_ids`
+# cross-references the [[claims]] this figure supports.
+
 [[figures]]
-id = "<short-id>"             # e.g. "fig4a"
-paper_path = ""               # e.g. knowledge-base/literature/<method>/.figures/arxiv__<id>/<extracted-png>
-paper_authority = "primary"   # primary | trusted_reference | hint
-paper_attribution = ""        # e.g. "Tarabunga et al. 2023, Fig 4(a)"
-ours_path = ""                # e.g. results/<run>/figs/<id>.png
-data_path = ""                # e.g. results/<run>/figs/<id>.json (optional; enables interactive plot)
+id = "<short-id>"              # e.g. "fig4a"
+paper_path = ""                # e.g. knowledge-base/literature/<method>/.figures/arxiv__<id>/<extracted-png>
+paper_authority = "primary"    # primary | trusted_reference | hint
+paper_attribution = ""         # e.g. "Tarabunga et al. 2023, Fig 4(a)"
+ours_path = ""                 # e.g. results/<run>/figs/<id>.png
+data_path = ""                 # e.g. results/<run>/figs/<id>.json (optional; enables interactive plot)
 claim_ids = []
 
-# Optional run-level overrides for /report. Defaults are sane; only set when overriding.
-# featured_figure = "fig4a"           # which figure is the hero (default: first [[figures]] entry)
-# central_param = { h = 1.0 }         # parameter point for the highlighted-cell callout default
-
+# Optional run-level overrides for /report. Defaults are sane; only set when
+# overriding.
+# featured_figure = "fig4a"
+# central_param = { h = 1.0 }
 # [report]
-# fonts = "cdn"                       # "cdn" (default) | "embed" (base64 inline; +200KB)
+# fonts = "cdn"

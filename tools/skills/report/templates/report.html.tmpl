@@ -214,6 +214,23 @@
   .chip.muted { color: var(--stone); border-color: var(--border-cream); }
   .chip.spacer { flex: 1; background: none; border: none; padding: 0; cursor: default; }
 
+  .bypass-banner {
+    display: flex; gap: 14px; align-items: flex-start;
+    margin: 16px 0 0 0; padding: 12px 16px;
+    border-left: 3px solid var(--terracotta);
+    background: rgba(201,100,66,0.08);
+    border-radius: 0 6px 6px 0;
+  }
+  .bypass-icon {
+    font-size: 22px; color: var(--terracotta); line-height: 1;
+    margin-top: 2px; flex-shrink: 0;
+  }
+  .bypass-text strong { color: var(--terracotta); display: block; margin-bottom: 6px; }
+  .bypass-list { margin: 0; padding-left: 18px; font-size: 14px; }
+  .bypass-list li { margin-bottom: 4px; }
+  .bypass-list code { background: rgba(201,100,66,0.10); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+  .bypass-meta { color: var(--stone); font-size: 12px; }
+
   .chip-pop {
     position: absolute; bottom: calc(100% + 8px); left: 0;
     background: var(--near-black); color: var(--silver);
@@ -435,6 +452,8 @@
   <div class="strip">
     __STATUS_STRIP_HTML__
   </div>
+
+  __BYPASS_BANNER_HTML__
 </section>
 
 __EXTRA_FIGS_SECTION__

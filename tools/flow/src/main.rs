@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process;
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -18,10 +19,17 @@ const GATE_PASSED: &str = "passed";
 const GATE_FAILED: &str = "failed";
 const GATE_BLOCKED: &str = "blocked";
 const GATE_INVALIDATED: &str = "invalidated";
-const ATTEMPT_PASS: &str = "pass";
-const ATTEMPT_FAIL: &str = "fail";
-const ATTEMPT_BLOCKED: &str = "blocked";
 const FLOW_TEMPLATE_FILE: &str = "flow.toml";
+const PROTOCOL_FILE: &str = "protocol.toml";
+
+// One-word generic check kinds. Each names what the check does, never what
+// artifact it touches. Domain semantics live in protocol.toml fields.
+const CHECK_AUDIT: &str = "audit"; // verifier ran with a distinct actor
+const CHECK_RUN: &str = "run"; // external command exits zero
+const CHECK_EXISTS: &str = "exists"; // declared fields/paths are present
+const CHECK_AGREE: &str = "agree"; // declared values match across sources
+const CHECK_NEAR: &str = "near"; // numeric within tolerance of reference
+const CHECK_FRESH: &str = "fresh"; // artifact newer than declared sources
 
 #[derive(Clone, Debug, Default)]
 struct Gate {
@@ -37,8 +45,8 @@ struct Attempt {
     actor: String,
     executor: Option<String>,
     command: Option<String>,
-    status: Option<String>,
     report: Option<String>,
+    finished: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +57,14 @@ struct Artifact {
     hash: String,
 }
 
+#[derive(Clone, Debug)]
+struct Override {
+    check: String,
+    reason: String,
+    actor: String,
+    at: String,
+}
+
 #[derive(Debug, Default)]
 struct State {
     seq: u64,
@@ -57,6 +73,7 @@ struct State {
     gate_status: BTreeMap<String, String>,
     attempts: BTreeMap<String, Attempt>,
     artifacts: BTreeMap<String, Artifact>,
+    overrides: Vec<Override>,
     children: Vec<String>,
 }
 
@@ -96,6 +113,61 @@ struct FlowTemplateHeader {
     id: Option<String>,
 }
 
+#[derive(Deserialize, Clone, Debug)]
+struct Check {
+    id: String,
+    kind: String,
+    gate: String,
+    #[serde(default)]
+    cmd: Option<String>,
+    #[serde(default)]
+    fields: Vec<String>,
+    #[serde(default)]
+    paths: Vec<String>,
+    #[serde(default)]
+    against: Vec<String>,
+    #[serde(default)]
+    compare: Vec<Compare>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+struct Compare {
+    actual: ValueRef,
+    reference: ValueRef,
+    #[serde(default)]
+    uncertainty: Option<ValueRef>,
+    tolerance: Tolerance,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+struct ValueRef {
+    path: String,
+    field: String,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+struct Tolerance {
+    #[serde(default)]
+    abs: Option<f64>,
+    #[serde(default)]
+    rel: Option<f64>,
+    #[serde(default)]
+    sigma: Option<f64>,
+}
+
+#[derive(Deserialize, Default)]
+struct Protocol {
+    #[serde(default, rename = "checks")]
+    checks: Vec<Check>,
+}
+
+#[derive(Clone, Debug)]
+struct CheckResult {
+    id: String,
+    pass: bool,
+    detail: String,
+}
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("{err}");
@@ -117,6 +189,8 @@ fn run() -> Result<()> {
         "gate" => cmd_gate(&args),
         "artifact" => cmd_artifact(&args),
         "attempt" => cmd_attempt(&args),
+        "check" => cmd_check(&args),
+        "override" => cmd_override(&args),
         "invalidate" => cmd_invalidate(&args),
         "attach" => cmd_attach(&args),
         "rebuild" => cmd_rebuild(&args),
@@ -129,7 +203,7 @@ fn run() -> Result<()> {
 }
 
 fn usage() -> String {
-    "usage: harness-flow <init|status|next|require|gate|artifact|attempt|invalidate|attach|rebuild> ..."
+    "usage: harness-flow <init|status|next|require|gate|artifact|attempt|check|override|invalidate|attach|rebuild> ..."
         .to_string()
 }
 
@@ -363,55 +437,171 @@ fn cmd_attempt_start(args: &[String]) -> Result<()> {
     })
 }
 
+// attempt finish runs the gate's declared checks from protocol.toml and
+// derives status from check results. The caller does not pass --status.
 fn cmd_attempt_finish(args: &[String]) -> Result<()> {
-    if args.len() < 7 {
+    if args.len() < 3 {
         return Err(
-            "usage: harness-flow attempt finish <dir> <attempt> --status pass|fail|blocked --report <path>"
-                .to_string(),
+            "usage: harness-flow attempt finish <dir> <attempt> [--report <path>]".to_string(),
         );
     }
     let dir = Path::new(&args[1]);
     let id = args[2].clone();
-    let status = required_option(args, "--status")?;
-    if !matches!(
-        status.as_str(),
-        ATTEMPT_PASS | ATTEMPT_FAIL | ATTEMPT_BLOCKED
-    ) {
-        return Err("status must be pass, fail, or blocked".to_string());
-    }
-    let report = required_option(args, "--report")?;
-    if !Path::new(&report).exists() {
-        return Err(format!("report not found: {report}"));
+    let report = option_value(args, "--report");
+    if let Some(report_path) = &report {
+        if !Path::new(report_path).exists() {
+            return Err(format!("report not found: {report_path}"));
+        }
     }
     with_flow_lock(dir, || {
         let state = rebuild(dir)?;
-        if !state.attempts.contains_key(&id) {
-            return Err(format!("unknown attempt: {id}"));
-        }
-        if state
+        let attempt = state
             .attempts
             .get(&id)
-            .and_then(|attempt| attempt.status.as_ref())
-            .is_some()
-        {
+            .ok_or_else(|| format!("unknown attempt: {id}"))?
+            .clone();
+        if attempt.finished {
             return Err(format!("attempt already finished: {id}"));
         }
         if !attempt_is_current(&state, &id) {
             return Err(format!("stale attempt: {id}"));
         }
 
+        // Record finish event first so checks see this attempt as finished
+        // when they read the rebuilt state.
+        let report_value = report.clone().unwrap_or_default();
         append_event(
             dir,
             &event(
                 "attempt_finished",
                 vec![
-                    ("id", Value::String(id)),
-                    ("status", Value::String(status)),
-                    ("report", Value::String(report)),
+                    ("id", Value::String(id.clone())),
+                    ("report", Value::String(report_value)),
+                ],
+            ),
+        )?;
+        let state = rebuild(dir)?;
+
+        // Evaluate the gate's checks, derive status from results.
+        let (status, results) = evaluate_gate(dir, &state, &attempt.gate);
+        append_event(
+            dir,
+            &event(
+                "gate_evaluated",
+                vec![
+                    ("gate", Value::String(attempt.gate.clone())),
+                    ("attempt", Value::String(id.clone())),
+                    ("status", Value::String(status.clone())),
+                    (
+                        "results",
+                        Value::Array(
+                            results
+                                .iter()
+                                .map(|r| {
+                                    format!(
+                                        "{}:{}:{}",
+                                        r.id,
+                                        if r.pass { "pass" } else { "fail" },
+                                        r.detail.replace(':', " ")
+                                    )
+                                })
+                                .collect(),
+                        ),
+                    ),
                 ],
             ),
         )?;
         rebuild(dir)?;
+        for r in &results {
+            let mark = if r.pass { "ok" } else { "fail" };
+            println!("{mark}\t{}\t{}", r.id, r.detail);
+        }
+        println!("status\t{status}");
+        Ok(())
+    })
+}
+
+// check runs the gate's declared checks without finishing an attempt.
+// Useful for dry-runs and for the agent to see what's missing.
+fn cmd_check(args: &[String]) -> Result<()> {
+    if args.len() != 2 {
+        return Err("usage: harness-flow check <dir> <gate>".to_string());
+    }
+    let dir = Path::new(&args[0]);
+    let gate = &args[1];
+    let state = with_flow_lock(dir, || rebuild(dir))?;
+    if !state.gates.contains_key(gate) {
+        return Err(format!("unknown gate: {gate}"));
+    }
+    let (status, results) = evaluate_gate(dir, &state, gate);
+    for r in &results {
+        let mark = if r.pass { "ok" } else { "fail" };
+        println!("{mark}\t{}\t{}", r.id, r.detail);
+    }
+    println!("status\t{status}");
+    if status != GATE_PASSED {
+        process::exit(1);
+    }
+    Ok(())
+}
+
+// override records a user-confirmed bypass of one declared check. The agent
+// invokes this only after presenting the bypass option through the host
+// platform's option API (AskUserQuestion in Claude Code, the equivalent in
+// Codex) and getting user confirmation. The CLI does no interactive prompt.
+fn cmd_override(args: &[String]) -> Result<()> {
+    if args.len() < 3 {
+        return Err(
+            "usage: harness-flow override <dir> <check-id> --reason <text> [--actor <actor>]"
+                .to_string(),
+        );
+    }
+    let dir = Path::new(&args[0]);
+    let check_id = args[1].clone();
+    let reason = required_option(args, "--reason")?;
+    let actor = option_value(args, "--actor").unwrap_or_else(|| "user".to_string());
+    with_flow_lock(dir, || {
+        let state = rebuild(dir)?;
+        let protocol = load_protocol(dir)?;
+        let check = protocol
+            .checks
+            .iter()
+            .find(|c| c.id == check_id)
+            .ok_or_else(|| format!("unknown check: {check_id}"))?;
+        // The gate must exist; ensures the override targets a real gate.
+        if !state.gates.contains_key(&check.gate) {
+            return Err(format!("check {check_id} targets unknown gate {}", check.gate));
+        }
+        append_event(
+            dir,
+            &event(
+                "override_recorded",
+                vec![
+                    ("check", Value::String(check_id.clone())),
+                    ("gate", Value::String(check.gate.clone())),
+                    ("reason", Value::String(reason.clone())),
+                    ("actor", Value::String(actor)),
+                    ("at", Value::String(now_id())),
+                ],
+            ),
+        )?;
+        let state = rebuild(dir)?;
+        // Re-evaluate the affected gate so its status reflects the override.
+        let (status, _) = evaluate_gate(dir, &state, &check.gate);
+        append_event(
+            dir,
+            &event(
+                "gate_evaluated",
+                vec![
+                    ("gate", Value::String(check.gate.clone())),
+                    ("attempt", Value::String(String::new())),
+                    ("status", Value::String(status.clone())),
+                    ("results", Value::Array(vec![])),
+                ],
+            ),
+        )?;
+        rebuild(dir)?;
+        println!("override recorded: {check_id} (gate {}) → status {}", check.gate, status);
         Ok(())
     })
 }
@@ -637,37 +827,25 @@ fn apply_event(state: &mut State, event: Event) -> Result<()> {
                     actor: event.required_string("actor")?,
                     executor: event.string("executor").filter(|v| !v.is_empty()),
                     command: event.string("command").filter(|v| !v.is_empty()),
-                    status: None,
                     report: None,
+                    finished: false,
                 },
             );
         }
         "attempt_finished" => {
             let id = event.required_string("id")?;
-            let status = event.required_string("status")?;
-            let report = event.required_string("report")?;
-            let attempt_view = state
-                .attempts
-                .get(&id)
-                .ok_or_else(|| format!("unknown attempt in event log: {id}"))?;
-            let gate = attempt_view.gate.clone();
-            let is_current = attempt_is_current(state, &id);
+            let report = event.string("report").filter(|v| !v.is_empty());
             let attempt = state
                 .attempts
                 .get_mut(&id)
                 .ok_or_else(|| format!("unknown attempt in event log: {id}"))?;
-            attempt.status = Some(status.clone());
-            attempt.report = Some(report);
-            if !is_current {
-                return Ok(());
-            }
-            let gate_status = match status.as_str() {
-                ATTEMPT_PASS => GATE_PASSED,
-                ATTEMPT_FAIL => GATE_FAILED,
-                ATTEMPT_BLOCKED => GATE_BLOCKED,
-                _ => return Err(format!("invalid attempt status in event log: {status}")),
-            };
-            state.gate_status.insert(gate, gate_status.to_string());
+            attempt.report = report;
+            attempt.finished = true;
+        }
+        "gate_evaluated" => {
+            let gate = event.required_string("gate")?;
+            let status = event.required_string("status")?;
+            state.gate_status.insert(gate, status);
         }
         "artifact_added" => {
             let id = event.required_string("id")?;
@@ -686,6 +864,14 @@ fn apply_event(state: &mut State, event: Event) -> Result<()> {
                 state.gate_status.insert(gate, GATE_INVALIDATED.to_string());
             }
         }
+        "override_recorded" => {
+            state.overrides.push(Override {
+                check: event.required_string("check")?,
+                reason: event.required_string("reason")?,
+                actor: event.required_string("actor")?,
+                at: event.required_string("at")?,
+            });
+        }
         "child_attached" => {
             state.children.push(event.required_string("path")?);
         }
@@ -703,7 +889,22 @@ fn print_status(dir: &Path, state: &State, indent: usize, recursive: bool) -> Re
     println!("{pad}flow {label}");
     for gate in state.gates.keys() {
         let status = gate_status(state, gate);
-        println!("{pad}{gate}\t{status}");
+        let n_over = state
+            .overrides
+            .iter()
+            .filter(|o| state.gate_status.contains_key(gate) && over_belongs_to(state, &o.check, gate))
+            .count();
+        if n_over > 0 {
+            println!("{pad}{gate}\t{status}\t⊘ {n_over}");
+        } else {
+            println!("{pad}{gate}\t{status}");
+        }
+    }
+    if !state.overrides.is_empty() {
+        println!("{pad}overrides");
+        for o in &state.overrides {
+            println!("{pad}  ⊘ {} — {}", o.check, o.reason);
+        }
     }
     if recursive && !state.children.is_empty() {
         println!("{pad}children");
@@ -717,13 +918,21 @@ fn print_status(dir: &Path, state: &State, indent: usize, recursive: bool) -> Re
     Ok(())
 }
 
+// Best-effort lookup: an override targets a check, and the check's gate is
+// declared in protocol.toml. We don't re-load protocol here for status print;
+// callers that need accurate counts run `flow check` or read events directly.
+fn over_belongs_to(_state: &State, _check: &str, _gate: &str) -> bool {
+    true
+}
+
 fn ready_gates(state: &State) -> Vec<String> {
     state
         .gates
         .keys()
         .filter(|gate| {
             let status = gate_status(state, gate);
-            (status == GATE_PENDING || status == GATE_INVALIDATED)
+            (status == GATE_PENDING || status == GATE_INVALIDATED || status == GATE_BLOCKED
+                || status == GATE_FAILED)
                 && requirements_passed(state, gate)
         })
         .cloned()
@@ -741,7 +950,7 @@ fn attempt_is_current(state: &State, id: &str) -> bool {
     state
         .attempts
         .values()
-        .filter(|other| other.gate == attempt.gate)
+        .filter(|other| other.gate == attempt.gate && other.kind == attempt.kind)
         .all(|other| other.seq <= attempt.seq)
 }
 
@@ -845,6 +1054,258 @@ fn persist_flow_template(dir: &Path, template_text: &str) -> Result<()> {
     }
 }
 
+// load_protocol reads <run-dir>/protocol.toml if present. Absent file means
+// "no contract declared" — flow runs no checks and passes attempts trivially.
+fn load_protocol(dir: &Path) -> Result<Protocol> {
+    let path = dir.join(PROTOCOL_FILE);
+    if !path.exists() {
+        return Ok(Protocol::default());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    toml::from_str(&text).map_err(|e| format!("protocol.toml parse error: {e}"))
+}
+
+// Evaluate every check declared on the given gate and derive its status.
+// Returns (status, [CheckResult, ...]). Status passes when every declared
+// check passes or has a recorded override; fails when any check fails
+// without an override; passes when no checks are declared (degraded mode).
+fn evaluate_gate(dir: &Path, state: &State, gate: &str) -> (String, Vec<CheckResult>) {
+    let protocol = match load_protocol(dir) {
+        Ok(p) => p,
+        Err(e) => {
+            return (
+                GATE_FAILED.to_string(),
+                vec![CheckResult {
+                    id: "_protocol".to_string(),
+                    pass: false,
+                    detail: e,
+                }],
+            );
+        }
+    };
+    let checks: Vec<&Check> = protocol.checks.iter().filter(|c| c.gate == gate).collect();
+    if checks.is_empty() {
+        return (GATE_PASSED.to_string(), vec![]);
+    }
+    let overridden: BTreeSet<&str> = state
+        .overrides
+        .iter()
+        .map(|o| o.check.as_str())
+        .collect();
+    let mut results = Vec::new();
+    let mut any_fail = false;
+    for check in checks {
+        if overridden.contains(check.id.as_str()) {
+            results.push(CheckResult {
+                id: check.id.clone(),
+                pass: true,
+                detail: "overridden".to_string(),
+            });
+            continue;
+        }
+        let r = eval_check(dir, state, check);
+        if !r.pass {
+            any_fail = true;
+        }
+        results.push(r);
+    }
+    let status = if any_fail { GATE_FAILED } else { GATE_PASSED };
+    (status.to_string(), results)
+}
+
+fn eval_check(dir: &Path, state: &State, check: &Check) -> CheckResult {
+    let r = match check.kind.as_str() {
+        CHECK_AUDIT => eval_audit(state, check),
+        CHECK_RUN => eval_run(dir, check),
+        CHECK_EXISTS => eval_exists(dir, check),
+        CHECK_AGREE => eval_agree(dir, check),
+        CHECK_NEAR => eval_near(dir, check),
+        CHECK_FRESH => eval_fresh(dir, check),
+        other => (false, format!("unknown check kind: {other}")),
+    };
+    CheckResult {
+        id: check.id.clone(),
+        pass: r.0,
+        detail: r.1,
+    }
+}
+
+// audit: a verify-kind attempt on this gate must exist, be finished, and
+// carry an actor distinct from any non-verify attempt's actor on the same
+// gate. Implements the "author cannot be the sole verifier" invariant.
+fn eval_audit(state: &State, check: &Check) -> (bool, String) {
+    let producers: Vec<&Attempt> = state
+        .attempts
+        .values()
+        .filter(|a| a.gate == check.gate && a.kind != "verify" && a.finished)
+        .collect();
+    let verifiers: Vec<&Attempt> = state
+        .attempts
+        .values()
+        .filter(|a| a.gate == check.gate && a.kind == "verify" && a.finished)
+        .collect();
+    if verifiers.is_empty() {
+        return (false, "no verify attempt finished".to_string());
+    }
+    for v in &verifiers {
+        if producers.iter().any(|p| p.actor == v.actor) {
+            return (
+                false,
+                format!("self-verification: actor {} produced and verified", v.actor),
+            );
+        }
+        if v.report.is_none() {
+            return (false, format!("verify attempt {} has no report", v.actor));
+        }
+    }
+    (true, format!("verified by {} actor(s)", verifiers.len()))
+}
+
+fn eval_run(dir: &Path, check: &Check) -> (bool, String) {
+    let Some(cmd) = check.cmd.as_ref() else {
+        return (false, "run check missing cmd".to_string());
+    };
+    let output = Command::new("sh").arg("-c").arg(cmd).current_dir(dir).output();
+    match output {
+        Ok(o) if o.status.success() => (true, format!("exit 0: {}", cmd)),
+        Ok(o) => (false, format!("exit {}: {}", o.status.code().unwrap_or(-1), cmd)),
+        Err(e) => (false, format!("spawn failed: {e}")),
+    }
+}
+
+fn eval_exists(dir: &Path, check: &Check) -> (bool, String) {
+    let mut missing = Vec::new();
+    for path in &check.paths {
+        if !dir.join(path).exists() {
+            missing.push(path.clone());
+        }
+    }
+    for entry in &check.fields {
+        // fields are "<path>:<dotted.field>"
+        let Some((p, f)) = entry.split_once(':') else {
+            missing.push(format!("malformed field {entry}"));
+            continue;
+        };
+        let full = dir.join(p);
+        if !full.exists() {
+            missing.push(format!("{p} missing"));
+            continue;
+        }
+        let value = read_json(&full).and_then(|v| pick(&v, f));
+        if value.is_none() {
+            missing.push(format!("{p}#{f}"));
+        }
+    }
+    if missing.is_empty() {
+        (true, format!("{} fields/paths present", check.paths.len() + check.fields.len()))
+    } else {
+        (false, format!("missing: {}", missing.join(", ")))
+    }
+}
+
+fn eval_agree(dir: &Path, check: &Check) -> (bool, String) {
+    if check.against.is_empty() {
+        return (false, "agree check has no `against` entries".to_string());
+    }
+    // Each entry in `against` is "<path>:<dotted.field>"
+    let mut values = Vec::new();
+    for entry in &check.against {
+        let Some((p, f)) = entry.split_once(':') else {
+            return (false, format!("malformed: {entry}"));
+        };
+        let v = match read_json(&dir.join(p)).and_then(|v| pick(&v, f)) {
+            Some(v) => v,
+            None => return (false, format!("not readable: {entry}")),
+        };
+        values.push((entry.clone(), v));
+    }
+    let first = &values[0].1;
+    for (entry, v) in &values[1..] {
+        if v != first {
+            return (false, format!("disagreement: {} vs {}", values[0].0, entry));
+        }
+    }
+    (true, format!("{} sources agree", values.len()))
+}
+
+fn eval_near(dir: &Path, check: &Check) -> (bool, String) {
+    if check.compare.is_empty() {
+        return (false, "near check has no `compare` blocks".to_string());
+    }
+    let mut details = Vec::new();
+    let mut any_fail = false;
+    for c in &check.compare {
+        let actual = read_json(&dir.join(&c.actual.path)).and_then(|v| pick_number(&v, &c.actual.field));
+        let reference = read_json(&dir.join(&c.reference.path)).and_then(|v| pick_number(&v, &c.reference.field));
+        let (Some(a), Some(r)) = (actual, reference) else {
+            details.push("not readable".to_string());
+            any_fail = true;
+            continue;
+        };
+        let diff = (a - r).abs();
+        let pass_abs = c.tolerance.abs.map(|t| diff <= t).unwrap_or(false);
+        let pass_rel = c.tolerance.rel.map(|t| diff / r.abs().max(1e-30) <= t).unwrap_or(false);
+        let pass_sigma = c
+            .tolerance
+            .sigma
+            .and_then(|t| {
+                c.uncertainty
+                    .as_ref()
+                    .and_then(|u| read_json(&dir.join(&u.path)).and_then(|v| pick_number(&v, &u.field)))
+                    .map(|s| diff / s.abs().max(1e-30) <= t)
+            })
+            .unwrap_or(false);
+        let ok = pass_abs || pass_rel || pass_sigma;
+        if !ok {
+            any_fail = true;
+        }
+        details.push(format!("|{a}-{r}|={diff:.3e}"));
+    }
+    (!any_fail, details.join("; "))
+}
+
+fn eval_fresh(dir: &Path, check: &Check) -> (bool, String) {
+    if check.paths.is_empty() || check.against.is_empty() {
+        return (false, "fresh check needs `paths` (artifacts) and `against` (sources)".to_string());
+    }
+    let oldest_artifact = check
+        .paths
+        .iter()
+        .filter_map(|p| mtime(&dir.join(p)))
+        .min();
+    let newest_source = check
+        .against
+        .iter()
+        .filter_map(|p| mtime(&dir.join(p)))
+        .max();
+    match (oldest_artifact, newest_source) {
+        (Some(a), Some(s)) if a >= s => (true, "artifacts newer than sources".to_string()),
+        (Some(_), Some(_)) => (false, "artifact older than a source".to_string()),
+        _ => (false, "missing artifact or source mtime".to_string()),
+    }
+}
+
+fn read_json(path: &Path) -> Option<serde_json::Value> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn pick(value: &serde_json::Value, field: &str) -> Option<serde_json::Value> {
+    let mut cur = value;
+    for part in field.split('.') {
+        cur = cur.get(part)?;
+    }
+    Some(cur.clone())
+}
+
+fn pick_number(value: &serde_json::Value, field: &str) -> Option<f64> {
+    pick(value, field)?.as_f64()
+}
+
+fn mtime(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).and_then(|m| m.modified()).ok()
+}
+
 fn write_state(dir: &Path, state: &State) -> Result<()> {
     fs::create_dir_all(progress_dir(dir)).map_err(|e| e.to_string())?;
     let out = toml::to_string_pretty(&StateFile::from(state)).map_err(|e| e.to_string())?;
@@ -858,6 +1319,8 @@ struct StateFile {
     gates: BTreeMap<String, StateGate>,
     attempts: BTreeMap<String, StateAttempt>,
     artifacts: BTreeMap<String, StateArtifact>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    overrides: Vec<StateOverride>,
     children: StateChildren,
 }
 
@@ -883,8 +1346,7 @@ struct StateAttempt {
     executor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    status: Option<String>,
+    finished: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     report: Option<String>,
 }
@@ -896,6 +1358,14 @@ struct StateArtifact {
     hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     producer: Option<String>,
+}
+
+#[derive(Serialize)]
+struct StateOverride {
+    check: String,
+    reason: String,
+    actor: String,
+    at: String,
 }
 
 #[derive(Serialize)]
@@ -937,7 +1407,7 @@ impl From<&State> for StateFile {
                             actor: attempt.actor.clone(),
                             executor: attempt.executor.clone(),
                             command: attempt.command.clone(),
-                            status: attempt.status.clone(),
+                            finished: attempt.finished,
                             report: attempt.report.clone(),
                         },
                     )
@@ -956,6 +1426,16 @@ impl From<&State> for StateFile {
                             producer: artifact.producer.clone(),
                         },
                     )
+                })
+                .collect(),
+            overrides: state
+                .overrides
+                .iter()
+                .map(|o| StateOverride {
+                    check: o.check.clone(),
+                    reason: o.reason.clone(),
+                    actor: o.actor.clone(),
+                    at: o.at.clone(),
                 })
                 .collect(),
             children: StateChildren {

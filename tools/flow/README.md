@@ -4,18 +4,19 @@
 
 The tool is intentionally small:
 
-- `gate` — a checkpoint that can pass, fail, block, or become invalidated.
-- `attempt` — one actor trying to satisfy one gate. Roles are metadata: `--kind audit`, `--actor agent:source-reviewer`, `--executor slurm:hpc2`, etc.
-- `artifact` — a file with a stable content hash and optional producer attempt.
+- `gate` — a checkpoint whose status (`pending` / `passed` / `failed`) is **derived live** from the protocol's `[[checks]]` and the event log. Never stored; never declared.
+- `attempt` — one actor trying to satisfy one gate. Roles are metadata: `--kind audit`, `--actor agent:source-reviewer`. Identity comes from the `FLOW_ACTOR_ID` env var (host-injected); `--actor` is the label.
+- `artifact` — a file with a stable content hash, an optional producer attempt, and a `deps` snapshot of any source hashes referenced by `fresh` checks at registration time.
+- `decision` — a recorded fork choice: `flow decide <run> --id <id> --question "..." --choice "..."`. Surfaces in `flow status` so branches aren't buried in chat.
+- `deviation` — a recorded departure from the protocol-declared contract: `flow deviate <run> --id <id> --statement "..."`. Renders alongside protocol-declared `[[deviations]]`.
+- `override` — a user-confirmed bypass of a failing check: `flow override <run> <check-id> --reason "..."`. Surfaces as ⊘ in downstream artifacts.
 - `child` — another flow attached to a parent campaign.
 
-State is append-only. `progress/events.jsonl` is the source of truth; `progress/state.toml` is rebuilt for humans.
+State is append-only. `progress/events.jsonl` is the source of truth (typed Rust enum, JSON-encoded); `progress/state.toml` is the derived projection for humans.
 
 Each command takes a local `progress/.lock` while reading, appending, or rebuilding state. This serializes multiple local agents on the same checkout. Subagents and remote jobs should still report back to the main agent instead of writing the event log directly.
 
-Artifact hashes use SHA-256 and are recorded as `sha256:<hex>`.
-
-If an existing artifact id is re-added with a different hash, `harness-flow` invalidates the producing gate and its downstream gates automatically. Finishing an older attempt after a newer attempt has started is rejected as stale.
+Artifact hashes use SHA-256 and are recorded as `sha256:<hex>`. Re-registering an artifact with a different hash naturally invalidates downstream `fresh` checks (their `deps` snapshot no longer matches). There is no separate "invalidate" command — status is always derived.
 
 ## Run
 
@@ -49,11 +50,12 @@ flow status results/run-a
 `progress/events.jsonl`, so each run keeps the exact gate contract it started
 from.
 
-If a source changes outside the `artifact add` path, invalidate from that artifact or gate explicitly. The producing gate and dependent gates become invalidated.
+Decisions and deviations are recorded as events, not chat-prose:
 
 ```bash
-flow invalidate results/run-a --from protocol
-flow next results/run-a
+flow decide results/run-a --id scope --question "compute scope?" --choice "reduced grid" --reason "compute budget"
+flow deviate results/run-a --id backend --statement "MPS at χ=30 instead of TTN" --reason "TTN not wired"
+flow status results/run-a   # shows both in the projection
 ```
 
 ## Goal Prompt
@@ -61,7 +63,7 @@ flow next results/run-a
 Use `/goal` as the liveness layer and `harness-flow` as the truth layer:
 
 ```text
-/goal Continue results/run-a until `tools/cli/flow require results/run-a close` exits 0, or stop after 20 turns / 6 hours. After each turn, run `tools/cli/flow status results/run-a` and report the current gate, latest verification, and blocker. Do not claim reproduction if any gate is failed, blocked, or invalidated.
+/goal Continue results/run-a until `tools/cli/flow require results/run-a close` exits 0, or stop after 20 turns / 6 hours. After each turn, run `tools/cli/flow status results/run-a` and report the current gate, latest verification, and blocker. Do not claim reproduction if any gate is failed.
 ```
 
 The completion condition must cite the command the agent will run. Goal evaluators judge from the conversation transcript, so the agent must surface the relevant command output before claiming the goal is met.

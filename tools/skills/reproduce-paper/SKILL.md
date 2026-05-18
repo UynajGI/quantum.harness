@@ -61,11 +61,16 @@ Each gate's contract lives in `protocol.toml` as `[[checks]]`. `flow` runs the c
 When `flow attempt finish` reports a failing check:
 
 1. **Repair the evidence** — fix the artifact, run a new attempt.
-2. **Record a deviation** — edit `protocol.toml`'s `[[deviations]]` to declare the difference; re-run.
-3. **Override** — present `AskUserQuestion` (or Codex equivalent) with the failing check as one option. On user confirmation, `flow override <run> <check-id> --reason "<text>"`. The override is recorded forever; downstream artifacts show ⊘.
-4. **Stop** — always a real option.
+2. **Record a deviation** — `flow deviate <run> --id <id> --statement "..." --reason "..."` for runtime departures, or declare in `protocol.toml`'s `[[deviations]]` upfront. Both surface as ⚠ in `flow status`.
+3. **Record a decision** — at any runtime fork the user hasn't pre-specified, present `AskUserQuestion` then `flow decide <run> --id <id> --question "..." --choice "..."`. Decisions surface in `flow status`.
+4. **Override** — `flow override <run> <check-id> --reason "<text>"`. The override is recorded forever; downstream artifacts show ⊘.
+5. **Stop** — always a real option.
 
 Never edit the script, the protocol, or the run report to *make* a check pass without changing the underlying evidence.
+
+## Closeout
+
+End every turn with `tools/cli/flow status <run>`. That is the canonical projection — gates, ⚠ deviations, ⊘ overrides, recorded decisions, pending obligations, next runnable gate. Do not author a closeout paragraph in chat; the truthful summary always lives in the projection.
 
 ## Resume
 

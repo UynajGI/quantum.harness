@@ -211,115 +211,221 @@ requires = ["ideas"]
 }
 
 #[test]
-fn artifact_hash_change_invalidates_downstream_gates() {
-    let root = tmp_dir("invalidate");
+fn decision_recorded_appears_in_status() {
+    let root = tmp_dir("decision");
     let template = root.join("template.toml");
     let run_dir = root.join("run");
-    let protocol = run_dir.join("protocol_doc.toml");
-    write(
-        &template,
-        r#"
-[[gates]]
-id = "protocol"
-invalidates = ["plan", "script"]
-
-[[gates]]
-id = "plan"
-requires = ["protocol"]
-
-[[gates]]
-id = "script"
-requires = ["plan"]
-"#,
-    );
-    write(&protocol, "claim = 1\n");
-
+    write(&template, "[[gates]]\nid = \"plan\"\n");
     assert_ok(&[
         "init",
         run_dir.to_str().unwrap(),
         "--template",
         template.to_str().unwrap(),
     ]);
-    let attempt = assert_ok(&[
-        "attempt",
-        "start",
-        run_dir.to_str().unwrap(),
-        "protocol",
-        "--kind",
-        "produce",
-        "--actor",
-        "agent:author",
-    ]);
     assert_ok(&[
-        "artifact",
-        "add",
+        "decide",
         run_dir.to_str().unwrap(),
-        "protocol",
-        protocol.to_str().unwrap(),
-        "--kind",
-        "protocol",
-        "--producer",
-        attempt.trim(),
+        "--id",
+        "scope",
+        "--question",
+        "compute scope?",
+        "--choice",
+        "reduced grid",
+        "--reason",
+        "compute budget",
     ]);
-    let state = fs::read_to_string(run_dir.join("progress").join("state.toml")).unwrap();
-    assert!(state.contains("sha256:"));
-    assert_ok(&[
-        "attempt",
-        "finish",
-        run_dir.to_str().unwrap(),
-        attempt.trim(),
-    ]);
-
-    let plan_attempt = assert_ok(&[
-        "attempt",
-        "start",
-        run_dir.to_str().unwrap(),
-        "plan",
-        "--kind",
-        "produce",
-        "--actor",
-        "agent:planner",
-    ]);
-    assert_ok(&[
-        "attempt",
-        "finish",
-        run_dir.to_str().unwrap(),
-        plan_attempt.trim(),
-    ]);
-
-    write(&protocol, "claim = 2\n");
-    let repair = assert_ok(&[
-        "attempt",
-        "start",
-        run_dir.to_str().unwrap(),
-        "protocol",
-        "--kind",
-        "produce",
-        "--actor",
-        "agent:author",
-    ]);
-    assert_ok(&[
-        "artifact",
-        "add",
-        run_dir.to_str().unwrap(),
-        "protocol",
-        protocol.to_str().unwrap(),
-        "--kind",
-        "protocol",
-        "--producer",
-        repair.trim(),
-    ]);
-    assert_ok(&[
-        "attempt",
-        "finish",
-        run_dir.to_str().unwrap(),
-        repair.trim(),
-    ]);
-
     let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
-    assert!(status.lines().any(|line| line.starts_with("protocol\tpassed")));
-    assert!(status.lines().any(|line| line.starts_with("plan\tinvalidated")));
-    assert!(status.lines().any(|line| line.starts_with("script\tinvalidated")));
+    assert!(status.contains("decisions"));
+    assert!(status.contains("scope"));
+    assert!(status.contains("reduced grid"));
+    let state = fs::read_to_string(run_dir.join("progress").join("state.toml")).unwrap();
+    assert!(state.contains("scope"));
+    assert!(state.contains("reduced grid"));
+}
+
+#[test]
+fn deviation_recorded_appears_in_status() {
+    let root = tmp_dir("deviation");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"plan\"\n");
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+    assert_ok(&[
+        "deviate",
+        run_dir.to_str().unwrap(),
+        "--id",
+        "backend",
+        "--statement",
+        "MPS instead of TTN",
+        "--reason",
+        "TTN not wired",
+    ]);
+    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
+    assert!(status.contains("⚠ deviations"));
+    assert!(status.contains("backend"));
+    assert!(status.contains("MPS instead of TTN"));
+}
+
+#[test]
+fn audit_blocks_when_identity_clashes_via_env() {
+    // FLOW_ACTOR_ID stamps the same identity on both producer and auditor;
+    // identity-clash beats label-distinctness.
+    let root = tmp_dir("audit-identity");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"protocol\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "protocol_audit"
+kind = "audit"
+gate = "protocol"
+"#,
+    );
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+    let producer = String::from_utf8_lossy(
+        &run_with_env(
+            &[
+                "attempt",
+                "start",
+                run_dir.to_str().unwrap(),
+                "protocol",
+                "--kind",
+                "produce",
+                "--actor",
+                "agent:label-a",
+            ],
+            &[("FLOW_ACTOR_ID", "process-7")],
+        )
+        .stdout,
+    )
+    .to_string();
+    assert_ok(&[
+        "attempt",
+        "finish",
+        run_dir.to_str().unwrap(),
+        producer.trim(),
+    ]);
+    let auditor = String::from_utf8_lossy(
+        &run_with_env(
+            &[
+                "attempt",
+                "start",
+                run_dir.to_str().unwrap(),
+                "protocol",
+                "--kind",
+                "audit",
+                "--actor",
+                "agent:label-b",
+            ],
+            &[("FLOW_ACTOR_ID", "process-7")],
+        )
+        .stdout,
+    )
+    .to_string();
+    let report = run_dir.join("verify").join("r.md");
+    write(&report, "audit\n");
+    assert_ok(&[
+        "attempt",
+        "finish",
+        run_dir.to_str().unwrap(),
+        auditor.trim(),
+        "--report",
+        report.to_str().unwrap(),
+    ]);
+    let stdout = String::from_utf8_lossy(&run(&["check", run_dir.to_str().unwrap(), "protocol"]).stdout).to_string();
+    assert!(stdout.contains("self-audit: identity"), "stdout: {stdout}");
+}
+
+#[test]
+fn fresh_invalidates_downstream_when_protocol_changes() {
+    // Replaces the old gate_invalidated behavior: a fresh check on the
+    // production artifact catches protocol.toml content drift.
+    let root = tmp_dir("derived-invalidate");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(
+        &template,
+        r#"
+[[gates]]
+id = "protocol"
+
+[[gates]]
+id = "production"
+requires = ["protocol"]
+"#,
+    );
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "production_fresh"
+kind = "fresh"
+gate = "production"
+paths = ["cells/cell-0001/manifest.json"]
+against = ["protocol.toml"]
+"#,
+    );
+    let cell = run_dir.join("cells/cell-0001/manifest.json");
+    write(&cell, "{\"value\": 1}\n");
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+    // Pass the protocol gate so production is reachable.
+    let protocol_attempt = assert_ok(&[
+        "attempt",
+        "start",
+        run_dir.to_str().unwrap(),
+        "protocol",
+        "--kind",
+        "produce",
+        "--actor",
+        "agent:author",
+    ]);
+    assert_ok(&[
+        "attempt",
+        "finish",
+        run_dir.to_str().unwrap(),
+        protocol_attempt.trim(),
+    ]);
+    // Register the production artifact (snapshots protocol.toml hash).
+    assert_ok(&[
+        "artifact",
+        "add",
+        run_dir.to_str().unwrap(),
+        "cell1",
+        cell.to_str().unwrap(),
+        "--kind",
+        "manifest",
+    ]);
+    // Production passes initially.
+    let pre = assert_ok(&["check", run_dir.to_str().unwrap(), "production"]);
+    assert!(pre.lines().any(|line| line == "status\tpassed"));
+    // Mutate the protocol (keeping the same check declared).
+    let mut p = fs::read_to_string(&run_dir.join("protocol.toml")).unwrap();
+    p.push_str("\n# drifted\n");
+    write(&run_dir.join("protocol.toml"), &p);
+    // Now production fails — source hash drift.
+    let post = run(&["check", run_dir.to_str().unwrap(), "production"]);
+    let post_out = String::from_utf8_lossy(&post.stdout).to_string();
+    assert!(!post.status.success(), "stdout: {post_out}");
+    assert!(post_out.contains("source changed"), "stdout: {post_out}");
 }
 
 #[test]
@@ -342,126 +448,6 @@ fn held_lock_blocks_second_writer() {
         &[("HARNESS_FLOW_LOCK_TIMEOUT_MS", "10")],
     );
     assert!(err.contains("flow lock is held"));
-}
-
-#[test]
-fn stale_attempt_cannot_finish_after_newer_one_finished() {
-    let root = tmp_dir("stale-attempt");
-    let template = root.join("template.toml");
-    let run_dir = root.join("run");
-    write(&template, "[[gates]]\nid = \"verify\"\n");
-
-    assert_ok(&[
-        "init",
-        run_dir.to_str().unwrap(),
-        "--template",
-        template.to_str().unwrap(),
-    ]);
-    let old = assert_ok(&[
-        "attempt",
-        "start",
-        run_dir.to_str().unwrap(),
-        "verify",
-        "--kind",
-        "audit",
-        "--actor",
-        "agent:slow-reviewer",
-    ]);
-    let new = assert_ok(&[
-        "attempt",
-        "start",
-        run_dir.to_str().unwrap(),
-        "verify",
-        "--kind",
-        "audit",
-        "--actor",
-        "agent:current-reviewer",
-    ]);
-
-    assert_ok(&[
-        "attempt",
-        "finish",
-        run_dir.to_str().unwrap(),
-        new.trim(),
-    ]);
-    let err = assert_fail(&[
-        "attempt",
-        "finish",
-        run_dir.to_str().unwrap(),
-        old.trim(),
-    ]);
-    assert!(err.contains("stale attempt"));
-    assert_ok(&["require", run_dir.to_str().unwrap(), "verify"]);
-}
-
-#[test]
-fn artifact_invalidation_uses_producer_gate_and_dependency_closure() {
-    let root = tmp_dir("artifact-source");
-    let template = root.join("template.toml");
-    let run_dir = root.join("run");
-    let source = run_dir.join("sources").join("paper.md");
-    write(
-        &template,
-        r#"
-[[gates]]
-id = "source"
-
-[[gates]]
-id = "plan"
-requires = ["source"]
-
-[[gates]]
-id = "script"
-requires = ["plan"]
-"#,
-    );
-    write(&source, "paper passage\n");
-
-    assert_ok(&[
-        "init",
-        run_dir.to_str().unwrap(),
-        "--template",
-        template.to_str().unwrap(),
-    ]);
-    let attempt = assert_ok(&[
-        "attempt",
-        "start",
-        run_dir.to_str().unwrap(),
-        "source",
-        "--kind",
-        "produce",
-        "--actor",
-        "agent:source-author",
-    ]);
-    assert_ok(&[
-        "artifact",
-        "add",
-        run_dir.to_str().unwrap(),
-        "paper_source",
-        source.to_str().unwrap(),
-        "--kind",
-        "primary",
-        "--producer",
-        attempt.trim(),
-    ]);
-    assert_ok(&[
-        "attempt",
-        "finish",
-        run_dir.to_str().unwrap(),
-        attempt.trim(),
-    ]);
-
-    assert_ok(&[
-        "invalidate",
-        run_dir.to_str().unwrap(),
-        "--from",
-        "paper_source",
-    ]);
-
-    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
-    assert!(status.lines().any(|line| line.starts_with("source\tinvalidated")));
-    assert!(status.lines().any(|line| line.starts_with("plan\tinvalidated")));
-    assert!(status.lines().any(|line| line.starts_with("script\tinvalidated")));
 }
 
 #[test]
@@ -498,7 +484,9 @@ fn parent_flow_tracks_child_flows_recursively() {
 }
 
 #[test]
-fn check_passes_when_protocol_declares_no_checks_for_gate() {
+fn check_pending_with_no_checks_until_attempt_finishes() {
+    // No checks declared + no attempts = pending (nothing demonstrated).
+    // After an attempt finishes, the gate passes.
     let root = tmp_dir("check-empty");
     let template = root.join("template.toml");
     let run_dir = root.join("run");
@@ -510,8 +498,30 @@ fn check_passes_when_protocol_declares_no_checks_for_gate() {
         "--template",
         template.to_str().unwrap(),
     ]);
-    let stdout = assert_ok(&["check", run_dir.to_str().unwrap(), "source"]);
-    assert!(stdout.lines().any(|line| line == "status\tpassed"));
+    // Before any attempt: pending.
+    let pre = run(&["check", run_dir.to_str().unwrap(), "source"]);
+    assert!(!pre.status.success());
+    let pre_out = String::from_utf8_lossy(&pre.stdout).to_string();
+    assert!(pre_out.lines().any(|line| line == "status\tpending"));
+    // Finish an attempt: passed.
+    let attempt = assert_ok(&[
+        "attempt",
+        "start",
+        run_dir.to_str().unwrap(),
+        "source",
+        "--kind",
+        "produce",
+        "--actor",
+        "agent:main",
+    ]);
+    assert_ok(&[
+        "attempt",
+        "finish",
+        run_dir.to_str().unwrap(),
+        attempt.trim(),
+    ]);
+    let post = assert_ok(&["check", run_dir.to_str().unwrap(), "source"]);
+    assert!(post.lines().any(|line| line == "status\tpassed"));
 }
 
 #[test]
@@ -721,4 +731,91 @@ gate = "protocol"
     ]);
 
     assert_ok(&["require", run_dir.to_str().unwrap(), "protocol"]);
+}
+
+fn fresh_setup(name: &str) -> (PathBuf, PathBuf) {
+    let root = tmp_dir(name);
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"assembly\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "artifacts_fresh"
+kind = "fresh"
+gate = "assembly"
+paths = ["figs/fig.png"]
+against = ["protocol.toml"]
+"#,
+    );
+    let fig = run_dir.join("figs").join("fig.png");
+    write(&fig, "fig content v1\n");
+
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+    assert_ok(&[
+        "artifact",
+        "add",
+        run_dir.to_str().unwrap(),
+        "fig",
+        fig.to_str().unwrap(),
+        "--kind",
+        "figure",
+    ]);
+    (run_dir, fig)
+}
+
+#[test]
+fn fresh_passes_when_artifact_and_sources_unchanged() {
+    let (run_dir, _) = fresh_setup("fresh-pass");
+    let stdout = assert_ok(&["check", run_dir.to_str().unwrap(), "assembly"]);
+    assert!(stdout.lines().any(|line| line == "status\tpassed"));
+    assert!(stdout.contains("unchanged"));
+}
+
+fn append(path: &Path, more: &str) {
+    let mut s = fs::read_to_string(path).unwrap();
+    s.push_str(more);
+    write(path, &s);
+}
+
+#[test]
+fn fresh_fails_when_source_content_changes() {
+    let (run_dir, _) = fresh_setup("fresh-source-change");
+    // Append to protocol.toml without removing the declared check.
+    append(&run_dir.join("protocol.toml"), "\n# appended\n");
+    let output = run(&["check", run_dir.to_str().unwrap(), "assembly"]);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert!(!output.status.success(), "expected failure; stdout: {stdout}");
+    assert!(stdout.contains("source changed"), "stdout: {stdout}");
+}
+
+#[test]
+fn fresh_fails_when_artifact_content_changes() {
+    let (run_dir, fig) = fresh_setup("fresh-artifact-change");
+    write(&fig, "fig content v2 (tampered)\n");
+    let output = run(&["check", run_dir.to_str().unwrap(), "assembly"]);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert!(!output.status.success(), "expected failure; stdout: {stdout}");
+    assert!(stdout.contains("artifact mutated"), "stdout: {stdout}");
+}
+
+#[test]
+fn fresh_catches_source_change_despite_forward_touch() {
+    // The audit loophole: agent mutates a source, then touches the artifact
+    // forward to defeat mtime-based freshness. Content-derived fresh ignores
+    // mtime; the source hash drift is caught regardless of touch.
+    let (run_dir, fig) = fresh_setup("fresh-touch-attack");
+    append(&run_dir.join("protocol.toml"), "\n# drifted\n");
+    Command::new("touch").arg(&fig).output().unwrap();
+    let output = run(&["check", run_dir.to_str().unwrap(), "assembly"]);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert!(!output.status.success(), "expected failure; stdout: {stdout}");
+    assert!(stdout.contains("source changed"), "stdout: {stdout}");
 }

@@ -17,9 +17,9 @@ type Result<T> = std::result::Result<T, String>;
 const GATE_PENDING: &str = "pending";
 const GATE_PASSED: &str = "passed";
 const GATE_FAILED: &str = "failed";
-const GATE_INVALIDATED: &str = "invalidated";
 const FLOW_TEMPLATE_FILE: &str = "flow.toml";
 const PROTOCOL_FILE: &str = "protocol.toml";
+const ACTOR_ENV: &str = "FLOW_ACTOR_ID";
 
 // One-word generic check kinds. Each names what the check does, never what
 // artifact it touches. Domain semantics live in protocol.toml fields.
@@ -28,7 +28,9 @@ const CHECK_RUN: &str = "run"; // external command exits zero
 const CHECK_EXISTS: &str = "exists"; // declared fields/paths are present
 const CHECK_AGREE: &str = "agree"; // declared values match across sources
 const CHECK_NEAR: &str = "near"; // numeric within tolerance of reference
-const CHECK_FRESH: &str = "fresh"; // artifact newer than declared sources
+const CHECK_FRESH: &str = "fresh"; // artifact and declared sources unchanged since registration
+
+// ─── State (read model) ──────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Default)]
 struct Gate {
@@ -41,7 +43,8 @@ struct Attempt {
     seq: u64,
     gate: String,
     kind: String,
-    actor: String,
+    actor_label: String,
+    actor_identity: Option<String>,
     executor: Option<String>,
     command: Option<String>,
     report: Option<String>,
@@ -54,6 +57,7 @@ struct Artifact {
     kind: String,
     producer: Option<String>,
     hash: String,
+    deps: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -61,7 +65,29 @@ struct Override {
     check: String,
     gate: String,
     reason: String,
-    actor: String,
+    actor_label: String,
+    actor_identity: Option<String>,
+    at: String,
+}
+
+#[derive(Clone, Debug)]
+struct Decision {
+    id: String,
+    question: String,
+    choice: String,
+    reason: Option<String>,
+    actor_label: String,
+    actor_identity: Option<String>,
+    at: String,
+}
+
+#[derive(Clone, Debug)]
+struct Deviation {
+    id: String,
+    statement: String,
+    reason: Option<String>,
+    actor_label: String,
+    actor_identity: Option<String>,
     at: String,
 }
 
@@ -70,29 +96,102 @@ struct State {
     seq: u64,
     flow_id: Option<String>,
     gates: BTreeMap<String, Gate>,
-    gate_status: BTreeMap<String, String>,
     attempts: BTreeMap<String, Attempt>,
     artifacts: BTreeMap<String, Artifact>,
     overrides: Vec<Override>,
+    decisions: Vec<Decision>,
+    deviations: Vec<Deviation>,
     children: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-enum Value {
-    String(String),
-    Array(Vec<String>),
-}
+// ─── Events (typed append-only log) ──────────────────────────────────────────
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct Event {
-    #[serde(rename = "event")]
-    kind: String,
-    #[serde(flatten)]
-    fields: BTreeMap<String, Value>,
+#[serde(tag = "event")]
+enum Event {
+    #[serde(rename = "flow_initialized")]
+    FlowInitialized {
+        flow_id: String,
+        created_at: String,
+    },
+    #[serde(rename = "gate_added")]
+    GateAdded {
+        id: String,
+        #[serde(default)]
+        requires: Vec<String>,
+        #[serde(default)]
+        invalidates: Vec<String>,
+    },
+    #[serde(rename = "attempt_started")]
+    AttemptStarted {
+        id: String,
+        gate: String,
+        kind: String,
+        actor_label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor_identity: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        executor: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        command: Option<String>,
+    },
+    #[serde(rename = "attempt_finished")]
+    AttemptFinished {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        report: Option<String>,
+    },
+    #[serde(rename = "artifact_added")]
+    ArtifactAdded {
+        id: String,
+        path: String,
+        kind: String,
+        hash: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        producer: Option<String>,
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        deps: BTreeMap<String, String>,
+    },
+    #[serde(rename = "override_recorded")]
+    OverrideRecorded {
+        check: String,
+        gate: String,
+        reason: String,
+        actor_label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor_identity: Option<String>,
+        at: String,
+    },
+    #[serde(rename = "decision_recorded")]
+    DecisionRecorded {
+        id: String,
+        question: String,
+        choice: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        actor_label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor_identity: Option<String>,
+        at: String,
+    },
+    #[serde(rename = "deviation_recorded")]
+    DeviationRecorded {
+        id: String,
+        statement: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        actor_label: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        actor_identity: Option<String>,
+        at: String,
+    },
+    #[serde(rename = "child_attached")]
+    ChildAttached { path: String },
 }
 
-#[derive(Clone, Debug, Deserialize)]
+// ─── Protocol (the contract) ─────────────────────────────────────────────────
+
+#[derive(Deserialize, Clone, Debug)]
 struct GateSpec {
     id: String,
     #[serde(default)]
@@ -155,10 +254,34 @@ struct Tolerance {
     sigma: Option<f64>,
 }
 
+#[derive(Deserialize, Clone, Debug, Default)]
+struct ProtocolDeviation {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    statement: String,
+    #[serde(default)]
+    reason: String,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+struct ProtocolPending {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    statement: String,
+    #[serde(default)]
+    reason: String,
+}
+
 #[derive(Deserialize, Default)]
 struct Protocol {
     #[serde(default, rename = "checks")]
     checks: Vec<Check>,
+    #[serde(default, rename = "deviations")]
+    deviations: Vec<ProtocolDeviation>,
+    #[serde(default, rename = "pending")]
+    pending: Vec<ProtocolPending>,
 }
 
 #[derive(Clone, Debug)]
@@ -167,6 +290,8 @@ struct CheckResult {
     pass: bool,
     detail: String,
 }
+
+// ─── Entry ───────────────────────────────────────────────────────────────────
 
 fn main() {
     if let Err(err) = run() {
@@ -190,9 +315,10 @@ fn run() -> Result<()> {
         "attempt" => cmd_attempt(&args),
         "check" => cmd_check(&args),
         "override" => cmd_override(&args),
-        "invalidate" => cmd_invalidate(&args),
+        "decide" => cmd_decide(&args),
+        "deviate" => cmd_deviate(&args),
         "attach" => cmd_attach(&args),
-        "-h" | "--help" | "help" => {
+        "help" | "--help" | "-h" => {
             println!("{}", usage());
             Ok(())
         }
@@ -201,9 +327,11 @@ fn run() -> Result<()> {
 }
 
 fn usage() -> String {
-    "usage: harness-flow <init|status|next|require|artifact|attempt|check|override|invalidate|attach> ..."
+    "usage: harness-flow <init|status|next|require|artifact|attempt|check|override|decide|deviate|attach> ..."
         .to_string()
 }
+
+// ─── init ────────────────────────────────────────────────────────────────────
 
 fn cmd_init(args: &[String]) -> Result<()> {
     if args.len() != 3 || args[1] != "--template" {
@@ -224,34 +352,27 @@ fn cmd_init(args: &[String]) -> Result<()> {
 
         append_event(
             dir,
-            &event(
-                "flow_initialized",
-                vec![
-                    (
-                        "flow_id",
-                        Value::String(flow_id.unwrap_or_else(|| flow_id_from_path(dir))),
-                    ),
-                    ("created_at", Value::String(now_id())),
-                ],
-            ),
+            &Event::FlowInitialized {
+                flow_id: flow_id.unwrap_or_else(|| flow_id_from_path(dir)),
+                created_at: now_id(),
+            },
         )?;
         for gate in gates {
             append_event(
                 dir,
-                &event(
-                    "gate_added",
-                    vec![
-                        ("id", Value::String(gate.id)),
-                        ("requires", Value::Array(gate.requires)),
-                        ("invalidates", Value::Array(gate.invalidates)),
-                    ],
-                ),
+                &Event::GateAdded {
+                    id: gate.id,
+                    requires: gate.requires,
+                    invalidates: gate.invalidates,
+                },
             )?;
         }
         rebuild(dir)?;
         Ok(())
     })
 }
+
+// ─── status ──────────────────────────────────────────────────────────────────
 
 fn cmd_status(args: &[String]) -> Result<()> {
     if args.is_empty() {
@@ -260,8 +381,103 @@ fn cmd_status(args: &[String]) -> Result<()> {
     let dir = Path::new(&args[0]);
     let recursive = args.iter().skip(1).any(|arg| arg == "--recursive");
     let state = with_flow_lock(dir, || rebuild(dir))?;
-    print_status(dir, &state, 0, recursive)
+    let protocol = load_protocol(dir)?;
+    print_status(dir, &state, &protocol, 0, recursive)
 }
+
+fn print_status(
+    dir: &Path,
+    state: &State,
+    protocol: &Protocol,
+    indent: usize,
+    recursive: bool,
+) -> Result<()> {
+    let pad = " ".repeat(indent);
+    let label = state
+        .flow_id
+        .as_deref()
+        .unwrap_or_else(|| dir.file_name().and_then(|v| v.to_str()).unwrap_or("."));
+    println!("{pad}flow {label}");
+
+    for gate in state.gates.keys() {
+        let status = gate_status(dir, state, protocol, gate);
+        let n_over = state.overrides.iter().filter(|o| o.gate == *gate).count();
+        if n_over > 0 {
+            println!("{pad}{gate}\t{status}\t⊘ {n_over}");
+        } else {
+            println!("{pad}{gate}\t{status}");
+        }
+    }
+
+    let declared_deviations: Vec<&ProtocolDeviation> = protocol
+        .deviations
+        .iter()
+        .filter(|d| !d.id.is_empty())
+        .collect();
+    let total_deviations = declared_deviations.len() + state.deviations.len();
+    if total_deviations > 0 {
+        println!("{pad}⚠ deviations ({total_deviations})");
+        for d in &declared_deviations {
+            print_deviation(&pad, &d.id, &d.statement, Some(&d.reason));
+        }
+        for d in &state.deviations {
+            print_deviation(&pad, &d.id, &d.statement, d.reason.as_deref());
+        }
+    }
+
+    if !state.overrides.is_empty() {
+        println!("{pad}⊘ overrides ({})", state.overrides.len());
+        for o in &state.overrides {
+            println!("{pad}  ⊘ {} ({}) — {}", o.check, o.gate, o.reason);
+        }
+    }
+
+    if !state.decisions.is_empty() {
+        println!("{pad}decisions ({})", state.decisions.len());
+        for d in &state.decisions {
+            println!("{pad}  · {} — {} = {}", d.id, d.question, d.choice);
+        }
+    }
+
+    let pending: Vec<&ProtocolPending> = protocol
+        .pending
+        .iter()
+        .filter(|p| !p.id.is_empty())
+        .collect();
+    if !pending.is_empty() {
+        println!("{pad}pending ({})", pending.len());
+        for p in pending {
+            if p.reason.is_empty() {
+                println!("{pad}  · {} — {}", p.id, p.statement);
+            } else {
+                println!("{pad}  · {} — {} ({})", p.id, p.statement, p.reason);
+            }
+        }
+    }
+
+    let dir_arg = dir.display().to_string();
+    let next: Vec<String> = ready_gates(dir, state, protocol);
+    if !next.is_empty() {
+        println!("{pad}next");
+        for gate in next {
+            println!("{pad}  flow attempt start {dir_arg} {gate} --kind <kind> --actor agent:<role>");
+        }
+    }
+
+    if recursive && !state.children.is_empty() {
+        println!("{pad}children");
+        for child in &state.children {
+            println!("{pad}- {child}");
+            let child_dir = Path::new(child);
+            let child_state = with_flow_lock(child_dir, || rebuild(child_dir))?;
+            let child_protocol = load_protocol(child_dir)?;
+            print_status(child_dir, &child_state, &child_protocol, indent + 2, true)?;
+        }
+    }
+    Ok(())
+}
+
+// ─── next ────────────────────────────────────────────────────────────────────
 
 fn cmd_next(args: &[String]) -> Result<()> {
     if args.len() != 1 {
@@ -270,14 +486,15 @@ fn cmd_next(args: &[String]) -> Result<()> {
     let dir = Path::new(&args[0]);
     let dir_arg = &args[0];
     let state = with_flow_lock(dir, || rebuild(dir))?;
-    for gate in ready_gates(&state) {
+    let protocol = load_protocol(dir)?;
+    for gate in ready_gates(dir, &state, &protocol) {
         println!("{gate}");
-        println!(
-            "  flow attempt start {dir_arg} {gate} --kind <kind> --actor agent:<role>"
-        );
+        println!("  flow attempt start {dir_arg} {gate} --kind <kind> --actor agent:<role>");
     }
     Ok(())
 }
+
+// ─── require ─────────────────────────────────────────────────────────────────
 
 fn cmd_require(args: &[String]) -> Result<()> {
     if args.len() != 2 {
@@ -286,12 +503,15 @@ fn cmd_require(args: &[String]) -> Result<()> {
     let dir = Path::new(&args[0]);
     let gate = &args[1];
     let state = with_flow_lock(dir, || rebuild(dir))?;
-    if gate_passed(&state, gate) {
+    let protocol = load_protocol(dir)?;
+    if gate_passed(dir, &state, &protocol, gate) {
         Ok(())
     } else {
         Err(format!("{gate} not passed"))
     }
 }
+
+// ─── artifact ────────────────────────────────────────────────────────────────
 
 fn cmd_artifact(args: &[String]) -> Result<()> {
     if args.len() < 5 || args[0] != "add" {
@@ -306,6 +526,11 @@ fn cmd_artifact(args: &[String]) -> Result<()> {
     let kind = required_option(args, "--kind")?;
     let producer = option_value(args, "--producer");
     let hash = file_hash(path)?;
+    let rel = path
+        .strip_prefix(dir)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string());
+    let deps = snapshot_deps(dir, &rel)?;
     with_flow_lock(dir, || {
         ensure_flow(dir)?;
         let state = rebuild(dir)?;
@@ -313,48 +538,24 @@ fn cmd_artifact(args: &[String]) -> Result<()> {
             if !state.attempts.contains_key(producer) {
                 return Err(format!("unknown producer attempt: {producer}"));
             }
-            if !attempt_is_current(&state, producer) {
-                return Err(format!("stale producer attempt: {producer}"));
-            }
         }
-        let invalidated = match state.artifacts.get(&id) {
-            Some(existing) if existing.hash != hash => {
-                invalidation_closure(&state, invalidation_roots(&state, &id)?)
-            }
-            _ => Vec::new(),
-        };
         append_event(
             dir,
-            &event(
-                "artifact_added",
-                vec![
-                    ("id", Value::String(id.clone())),
-                    ("path", Value::String(path.display().to_string())),
-                    ("kind", Value::String(kind.clone())),
-                    ("hash", Value::String(hash.clone())),
-                    (
-                        "producer",
-                        Value::String(producer.clone().unwrap_or_default()),
-                    ),
-                ],
-            ),
+            &Event::ArtifactAdded {
+                id: id.clone(),
+                path: rel,
+                kind,
+                hash,
+                producer: producer.clone(),
+                deps,
+            },
         )?;
-        if !invalidated.is_empty() {
-            append_event(
-                dir,
-                &event(
-                    "gate_invalidated",
-                    vec![
-                        ("from", Value::String(id.clone())),
-                        ("targets", Value::Array(invalidated)),
-                    ],
-                ),
-            )?;
-        }
         rebuild(dir)?;
         Ok(())
     })
 }
+
+// ─── attempt ─────────────────────────────────────────────────────────────────
 
 fn cmd_attempt(args: &[String]) -> Result<()> {
     if args.is_empty() {
@@ -377,32 +578,31 @@ fn cmd_attempt_start(args: &[String]) -> Result<()> {
     let dir = Path::new(&args[1]);
     let gate = args[2].clone();
     let kind = required_option(args, "--kind")?;
-    let actor = required_option(args, "--actor")?;
-    let executor = option_value(args, "--executor").unwrap_or_else(|| "local".to_string());
-    let command = option_value(args, "--command").unwrap_or_default();
+    let actor_label = required_option(args, "--actor")?;
+    let actor_identity = env::var(ACTOR_ENV).ok().filter(|v| !v.is_empty());
+    let executor = option_value(args, "--executor");
+    let command = option_value(args, "--command");
     with_flow_lock(dir, || {
         let state = rebuild(dir)?;
+        let protocol = load_protocol(dir)?;
         if !state.gates.contains_key(&gate) {
             return Err(format!("unknown gate: {gate}"));
         }
-        if !requirements_passed(&state, &gate) {
+        if !requirements_passed(dir, &state, &protocol, &gate) {
             return Err(format!("{gate} requirements not passed"));
         }
-
         let id = format!("a{}", now_id());
         append_event(
             dir,
-            &event(
-                "attempt_started",
-                vec![
-                    ("id", Value::String(id.clone())),
-                    ("gate", Value::String(gate)),
-                    ("kind", Value::String(kind)),
-                    ("actor", Value::String(actor)),
-                    ("executor", Value::String(executor)),
-                    ("command", Value::String(command)),
-                ],
-            ),
+            &Event::AttemptStarted {
+                id: id.clone(),
+                gate,
+                kind,
+                actor_label,
+                actor_identity,
+                executor,
+                command,
+            },
         )?;
         rebuild(dir)?;
         println!("{id}");
@@ -434,52 +634,16 @@ fn cmd_attempt_finish(args: &[String]) -> Result<()> {
         if attempt.finished {
             return Err(format!("attempt already finished: {id}"));
         }
-        if !attempt_is_current(&state, &id) {
-            return Err(format!("stale attempt: {id}"));
-        }
-
-        // Record finish before evaluating so checks see this attempt as finished.
-        let report_value = report.clone().unwrap_or_default();
         append_event(
             dir,
-            &event(
-                "attempt_finished",
-                vec![
-                    ("id", Value::String(id.clone())),
-                    ("report", Value::String(report_value)),
-                ],
-            ),
+            &Event::AttemptFinished {
+                id: id.clone(),
+                report,
+            },
         )?;
         let state = rebuild(dir)?;
-        let (status, results) = evaluate_gate(dir, &state, &attempt.gate);
-        append_event(
-            dir,
-            &event(
-                "gate_evaluated",
-                vec![
-                    ("gate", Value::String(attempt.gate.clone())),
-                    ("attempt", Value::String(id.clone())),
-                    ("status", Value::String(status.clone())),
-                    (
-                        "results",
-                        Value::Array(
-                            results
-                                .iter()
-                                .map(|r| {
-                                    format!(
-                                        "{}:{}:{}",
-                                        r.id,
-                                        if r.pass { "pass" } else { "fail" },
-                                        r.detail.replace(':', " ")
-                                    )
-                                })
-                                .collect(),
-                        ),
-                    ),
-                ],
-            ),
-        )?;
-        rebuild(dir)?;
+        let protocol = load_protocol(dir)?;
+        let (status, results) = evaluate_gate(dir, &state, &protocol, &attempt.gate);
         for r in &results {
             let mark = if r.pass { "ok" } else { "fail" };
             println!("{mark}\t{}\t{}", r.id, r.detail);
@@ -489,6 +653,8 @@ fn cmd_attempt_finish(args: &[String]) -> Result<()> {
     })
 }
 
+// ─── check ───────────────────────────────────────────────────────────────────
+
 fn cmd_check(args: &[String]) -> Result<()> {
     if args.len() != 2 {
         return Err("usage: harness-flow check <dir> <gate>".to_string());
@@ -496,10 +662,11 @@ fn cmd_check(args: &[String]) -> Result<()> {
     let dir = Path::new(&args[0]);
     let gate = &args[1];
     let state = with_flow_lock(dir, || rebuild(dir))?;
+    let protocol = load_protocol(dir)?;
     if !state.gates.contains_key(gate) {
         return Err(format!("unknown gate: {gate}"));
     }
-    let (status, results) = evaluate_gate(dir, &state, gate);
+    let (status, results) = evaluate_gate(dir, &state, &protocol, gate);
     for r in &results {
         let mark = if r.pass { "ok" } else { "fail" };
         println!("{mark}\t{}\t{}", r.id, r.detail);
@@ -510,6 +677,8 @@ fn cmd_check(args: &[String]) -> Result<()> {
     }
     Ok(())
 }
+
+// ─── override ────────────────────────────────────────────────────────────────
 
 // Agent invokes only after presenting the bypass via the host's option API
 // and getting user confirmation; the CLI itself is non-interactive.
@@ -523,7 +692,8 @@ fn cmd_override(args: &[String]) -> Result<()> {
     let dir = Path::new(&args[0]);
     let check_id = args[1].clone();
     let reason = required_option(args, "--reason")?;
-    let actor = option_value(args, "--actor").unwrap_or_else(|| "user".to_string());
+    let actor_label = option_value(args, "--actor").unwrap_or_else(|| "user".to_string());
+    let actor_identity = env::var(ACTOR_ENV).ok().filter(|v| !v.is_empty());
     with_flow_lock(dir, || {
         let state = rebuild(dir)?;
         let protocol = load_protocol(dir)?;
@@ -532,117 +702,100 @@ fn cmd_override(args: &[String]) -> Result<()> {
             .iter()
             .find(|c| c.id == check_id)
             .ok_or_else(|| format!("unknown check: {check_id}"))?;
-        // The gate must exist; ensures the override targets a real gate.
         if !state.gates.contains_key(&check.gate) {
-            return Err(format!("check {check_id} targets unknown gate {}", check.gate));
+            return Err(format!(
+                "check {check_id} targets unknown gate {}",
+                check.gate
+            ));
         }
         append_event(
             dir,
-            &event(
-                "override_recorded",
-                vec![
-                    ("check", Value::String(check_id.clone())),
-                    ("gate", Value::String(check.gate.clone())),
-                    ("reason", Value::String(reason.clone())),
-                    ("actor", Value::String(actor)),
-                    ("at", Value::String(now_id())),
-                ],
-            ),
-        )?;
-        let state = rebuild(dir)?;
-        // Re-evaluate the affected gate so its status reflects the override.
-        let (status, _) = evaluate_gate(dir, &state, &check.gate);
-        append_event(
-            dir,
-            &event(
-                "gate_evaluated",
-                vec![
-                    ("gate", Value::String(check.gate.clone())),
-                    ("attempt", Value::String(String::new())),
-                    ("status", Value::String(status.clone())),
-                    ("results", Value::Array(vec![])),
-                ],
-            ),
+            &Event::OverrideRecorded {
+                check: check_id.clone(),
+                gate: check.gate.clone(),
+                reason,
+                actor_label,
+                actor_identity,
+                at: now_id(),
+            },
         )?;
         rebuild(dir)?;
-        println!("override recorded: {check_id} (gate {}) → status {}", check.gate, status);
+        println!("override recorded: {check_id} (gate {})", check.gate);
         Ok(())
     })
 }
 
-fn cmd_invalidate(args: &[String]) -> Result<()> {
-    if args.len() < 3 {
+// ─── decide ──────────────────────────────────────────────────────────────────
+
+fn cmd_decide(args: &[String]) -> Result<()> {
+    if args.len() < 7 {
         return Err(
-            "usage: harness-flow invalidate <dir> --from <artifact-or-gate> [--gates a,b]"
+            "usage: harness-flow decide <dir> --id <id> --question <text> --choice <text> [--reason <text>] [--actor <actor>]"
                 .to_string(),
         );
     }
     let dir = Path::new(&args[0]);
-    let from = required_option(args, "--from")?;
-    let explicit = option_list(args, "--gates")?;
+    let id = required_option(args, "--id")?;
+    let question = required_option(args, "--question")?;
+    let choice = required_option(args, "--choice")?;
+    let reason = option_value(args, "--reason");
+    let actor_label = option_value(args, "--actor").unwrap_or_else(|| "user".to_string());
+    let actor_identity = env::var(ACTOR_ENV).ok().filter(|v| !v.is_empty());
     with_flow_lock(dir, || {
-        let state = rebuild(dir)?;
-        let mut targets = explicit;
-        if targets.is_empty() {
-            targets = invalidation_roots(&state, &from)?;
-        }
-        targets = invalidation_closure(&state, targets);
-        if targets.is_empty() {
-            return Err(format!("{from} has no invalidation targets"));
-        }
+        ensure_flow(dir)?;
         append_event(
             dir,
-            &event(
-                "gate_invalidated",
-                vec![
-                    ("from", Value::String(from)),
-                    ("targets", Value::Array(targets)),
-                ],
-            ),
+            &Event::DecisionRecorded {
+                id: id.clone(),
+                question,
+                choice,
+                reason,
+                actor_label,
+                actor_identity,
+                at: now_id(),
+            },
         )?;
         rebuild(dir)?;
+        println!("decision recorded: {id}");
         Ok(())
     })
 }
 
-fn invalidation_roots(state: &State, from: &str) -> Result<Vec<String>> {
-    if let Some(artifact) = state.artifacts.get(from) {
-        if let Some(producer) = &artifact.producer {
-            if let Some(attempt) = state.attempts.get(producer) {
-                return Ok(vec![attempt.gate.clone()]);
-            }
-        }
-        if state.gates.contains_key(from) {
-            return Ok(vec![from.to_string()]);
-        }
-        return Err(format!("{from} artifact has no producing gate"));
-    }
+// ─── deviate ─────────────────────────────────────────────────────────────────
 
-    if let Some(gate) = state.gates.get(from) {
-        return Ok(gate.invalidates.clone());
+fn cmd_deviate(args: &[String]) -> Result<()> {
+    if args.len() < 5 {
+        return Err(
+            "usage: harness-flow deviate <dir> --id <id> --statement <text> [--reason <text>] [--actor <actor>]"
+                .to_string(),
+        );
     }
-
-    Err(format!("{from} is not an artifact or gate"))
+    let dir = Path::new(&args[0]);
+    let id = required_option(args, "--id")?;
+    let statement = required_option(args, "--statement")?;
+    let reason = option_value(args, "--reason");
+    let actor_label = option_value(args, "--actor").unwrap_or_else(|| "user".to_string());
+    let actor_identity = env::var(ACTOR_ENV).ok().filter(|v| !v.is_empty());
+    with_flow_lock(dir, || {
+        ensure_flow(dir)?;
+        append_event(
+            dir,
+            &Event::DeviationRecorded {
+                id: id.clone(),
+                statement,
+                reason,
+                actor_label,
+                actor_identity,
+                at: now_id(),
+            },
+        )?;
+        rebuild(dir)?;
+        println!("deviation recorded: {id}");
+        Ok(())
+    })
 }
 
-fn invalidation_closure(state: &State, roots: Vec<String>) -> Vec<String> {
-    let mut seen = BTreeSet::new();
-    let mut stack = roots;
-    while let Some(gate) = stack.pop() {
-        if !state.gates.contains_key(&gate) || !seen.insert(gate.clone()) {
-            continue;
-        }
-        if let Some(spec) = state.gates.get(&gate) {
-            stack.extend(spec.invalidates.iter().cloned());
-        }
-        for (candidate, spec) in &state.gates {
-            if spec.requires.iter().any(|required| required == &gate) {
-                stack.push(candidate.clone());
-            }
-        }
-    }
-    seen.into_iter().collect()
-}
+// ─── attach ──────────────────────────────────────────────────────────────────
 
 fn cmd_attach(args: &[String]) -> Result<()> {
     if args.len() != 4 || args[2] != "--as" || args[3] != "child" {
@@ -658,15 +811,16 @@ fn cmd_attach(args: &[String]) -> Result<()> {
         ensure_flow(parent)?;
         append_event(
             parent,
-            &event(
-                "child_attached",
-                vec![("path", Value::String(child.display().to_string()))],
-            ),
+            &Event::ChildAttached {
+                path: child.display().to_string(),
+            },
         )?;
         rebuild(parent)?;
         Ok(())
     })
 }
+
+// ─── locks / paths ───────────────────────────────────────────────────────────
 
 struct FlowLock {
     path: PathBuf,
@@ -688,7 +842,6 @@ fn acquire_flow_lock(dir: &Path) -> Result<FlowLock> {
     let path = progress_dir(dir).join(".lock");
     let start = Instant::now();
     let timeout = lock_timeout();
-
     loop {
         match fs::create_dir(&path) {
             Ok(()) => {
@@ -717,6 +870,8 @@ fn lock_timeout() -> Duration {
         .map(Duration::from_millis)
         .unwrap_or_else(|| Duration::from_secs(30))
 }
+
+// ─── rebuild / persist ───────────────────────────────────────────────────────
 
 fn rebuild(dir: &Path) -> Result<State> {
     let events = read_events(dir)?;
@@ -751,169 +906,132 @@ fn ensure_flow(dir: &Path) -> Result<()> {
 fn apply_event(state: &mut State, event: Event) -> Result<()> {
     state.seq += 1;
     let event_seq = state.seq;
-    match event.kind.as_str() {
-        "flow_initialized" => {
-            state.flow_id = event.string("flow_id");
+    match event {
+        Event::FlowInitialized { flow_id, .. } => {
+            state.flow_id = Some(flow_id);
         }
-        "gate_added" => {
-            let id = event.required_string("id")?;
+        Event::GateAdded {
+            id,
+            requires,
+            invalidates,
+        } => {
             state.gates.insert(
-                id.clone(),
+                id,
                 Gate {
-                    requires: event.array("requires"),
-                    invalidates: event.array("invalidates"),
+                    requires,
+                    invalidates,
                 },
             );
-            state
-                .gate_status
-                .entry(id)
-                .or_insert_with(|| GATE_PENDING.to_string());
         }
-        "attempt_started" => {
-            let id = event.required_string("id")?;
+        Event::AttemptStarted {
+            id,
+            gate,
+            kind,
+            actor_label,
+            actor_identity,
+            executor,
+            command,
+        } => {
             state.attempts.insert(
                 id,
                 Attempt {
                     seq: event_seq,
-                    gate: event.required_string("gate")?,
-                    kind: event.required_string("kind")?,
-                    actor: event.required_string("actor")?,
-                    executor: event.string("executor").filter(|v| !v.is_empty()),
-                    command: event.string("command").filter(|v| !v.is_empty()),
+                    gate,
+                    kind,
+                    actor_label,
+                    actor_identity,
+                    executor,
+                    command,
                     report: None,
                     finished: false,
                 },
             );
         }
-        "attempt_finished" => {
-            let id = event.required_string("id")?;
-            let report = event.string("report").filter(|v| !v.is_empty());
+        Event::AttemptFinished { id, report } => {
             let attempt = state
                 .attempts
                 .get_mut(&id)
                 .ok_or_else(|| format!("unknown attempt in event log: {id}"))?;
-            attempt.report = report;
             attempt.finished = true;
+            attempt.report = report;
         }
-        "gate_evaluated" => {
-            let gate = event.required_string("gate")?;
-            let status = event.required_string("status")?;
-            state.gate_status.insert(gate, status);
-        }
-        "artifact_added" => {
-            let id = event.required_string("id")?;
+        Event::ArtifactAdded {
+            id,
+            path,
+            kind,
+            hash,
+            producer,
+            deps,
+        } => {
             state.artifacts.insert(
                 id,
                 Artifact {
-                    path: event.required_string("path")?,
-                    kind: event.required_string("kind")?,
-                    producer: event.string("producer").filter(|v| !v.is_empty()),
-                    hash: event.required_string("hash")?,
+                    path,
+                    kind,
+                    producer,
+                    hash,
+                    deps,
                 },
             );
         }
-        "gate_invalidated" => {
-            for gate in event.array("targets") {
-                state.gate_status.insert(gate, GATE_INVALIDATED.to_string());
-            }
-        }
-        "override_recorded" => {
+        Event::OverrideRecorded {
+            check,
+            gate,
+            reason,
+            actor_label,
+            actor_identity,
+            at,
+        } => {
             state.overrides.push(Override {
-                check: event.required_string("check")?,
-                gate: event.required_string("gate")?,
-                reason: event.required_string("reason")?,
-                actor: event.required_string("actor")?,
-                at: event.required_string("at")?,
+                check,
+                gate,
+                reason,
+                actor_label,
+                actor_identity,
+                at,
             });
         }
-        "child_attached" => {
-            state.children.push(event.required_string("path")?);
+        Event::DecisionRecorded {
+            id,
+            question,
+            choice,
+            reason,
+            actor_label,
+            actor_identity,
+            at,
+        } => {
+            state.decisions.push(Decision {
+                id,
+                question,
+                choice,
+                reason,
+                actor_label,
+                actor_identity,
+                at,
+            });
         }
-        other => return Err(format!("unknown event kind: {other}")),
+        Event::DeviationRecorded {
+            id,
+            statement,
+            reason,
+            actor_label,
+            actor_identity,
+            at,
+        } => {
+            state.deviations.push(Deviation {
+                id,
+                statement,
+                reason,
+                actor_label,
+                actor_identity,
+                at,
+            });
+        }
+        Event::ChildAttached { path } => {
+            state.children.push(path);
+        }
     }
     Ok(())
-}
-
-fn print_status(dir: &Path, state: &State, indent: usize, recursive: bool) -> Result<()> {
-    let pad = " ".repeat(indent);
-    let label = state
-        .flow_id
-        .as_deref()
-        .unwrap_or_else(|| dir.file_name().and_then(|v| v.to_str()).unwrap_or("."));
-    println!("{pad}flow {label}");
-    for gate in state.gates.keys() {
-        let status = gate_status(state, gate);
-        let n_over = state.overrides.iter().filter(|o| o.gate == *gate).count();
-        if n_over > 0 {
-            println!("{pad}{gate}\t{status}\t⊘ {n_over}");
-        } else {
-            println!("{pad}{gate}\t{status}");
-        }
-    }
-    if !state.overrides.is_empty() {
-        println!("{pad}overrides");
-        for o in &state.overrides {
-            println!("{pad}  ⊘ {} ({}) — {}", o.check, o.gate, o.reason);
-        }
-    }
-    if recursive && !state.children.is_empty() {
-        println!("{pad}children");
-        for child in &state.children {
-            println!("{pad}- {child}");
-            let child_dir = Path::new(child);
-            let child_state = with_flow_lock(child_dir, || rebuild(child_dir))?;
-            print_status(child_dir, &child_state, indent + 2, true)?;
-        }
-    }
-    Ok(())
-}
-
-fn ready_gates(state: &State) -> Vec<String> {
-    state
-        .gates
-        .keys()
-        .filter(|gate| {
-            let status = gate_status(state, gate);
-            (status == GATE_PENDING || status == GATE_INVALIDATED || status == GATE_FAILED)
-                && requirements_passed(state, gate)
-        })
-        .cloned()
-        .collect()
-}
-
-fn gate_passed(state: &State, gate: &str) -> bool {
-    gate_status(state, gate) == GATE_PASSED && requirements_passed(state, gate)
-}
-
-fn attempt_is_current(state: &State, id: &str) -> bool {
-    let Some(attempt) = state.attempts.get(id) else {
-        return false;
-    };
-    state
-        .attempts
-        .values()
-        .filter(|other| other.gate == attempt.gate && other.kind == attempt.kind)
-        .all(|other| other.seq <= attempt.seq)
-}
-
-fn requirements_passed(state: &State, gate: &str) -> bool {
-    let Some(spec) = state.gates.get(gate) else {
-        return false;
-    };
-    spec.requires
-        .iter()
-        .all(|required| gate_status(state, required) == GATE_PASSED)
-}
-
-fn gate_status(state: &State, gate: &str) -> String {
-    if !state.gates.contains_key(gate) {
-        return "missing".to_string();
-    }
-    state
-        .gate_status
-        .get(gate)
-        .cloned()
-        .unwrap_or_else(|| GATE_PENDING.to_string())
 }
 
 fn append_event(dir: &Path, event: &Event) -> Result<()> {
@@ -923,51 +1041,18 @@ fn append_event(dir: &Path, event: &Event) -> Result<()> {
         .append(true)
         .open(events_path(dir))
         .map_err(|e| e.to_string())?;
-    writeln!(file, "{}", render_event(event)).map_err(|e| e.to_string())
-}
-
-fn event(kind: &str, fields: Vec<(&str, Value)>) -> Event {
-    Event {
-        kind: kind.to_string(),
-        fields: fields
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    }
-}
-
-fn render_event(event: &Event) -> String {
-    serde_json::to_string(event).expect("flow events only contain serializable strings")
+    let line = serde_json::to_string(event).map_err(|e| e.to_string())?;
+    writeln!(file, "{line}").map_err(|e| e.to_string())
 }
 
 fn parse_event(line: &str) -> Result<Event> {
     serde_json::from_str(line).map_err(|err| format!("invalid event log line: {err}: {line}"))
 }
 
-impl Event {
-    fn string(&self, key: &str) -> Option<String> {
-        match self.fields.get(key) {
-            Some(Value::String(value)) => Some(value.clone()),
-            _ => None,
-        }
-    }
-
-    fn required_string(&self, key: &str) -> Result<String> {
-        self.string(key)
-            .ok_or_else(|| format!("event {} missing string field {key}", self.kind))
-    }
-
-    fn array(&self, key: &str) -> Vec<String> {
-        match self.fields.get(key) {
-            Some(Value::Array(values)) => values.clone(),
-            _ => Vec::new(),
-        }
-    }
-}
+// ─── template / protocol parsing ─────────────────────────────────────────────
 
 fn parse_template_text(text: &str) -> Result<(Option<String>, Vec<GateSpec>)> {
     let template: FlowTemplate = toml::from_str(text).map_err(|e| e.to_string())?;
-
     let mut seen = BTreeSet::new();
     for gate in &template.gates {
         if gate.id.is_empty() {
@@ -1006,29 +1091,29 @@ fn load_protocol(dir: &Path) -> Result<Protocol> {
     toml::from_str(&text).map_err(|e| format!("protocol.toml parse error: {e}"))
 }
 
-fn evaluate_gate(dir: &Path, state: &State, gate: &str) -> (String, Vec<CheckResult>) {
-    let protocol = match load_protocol(dir) {
-        Ok(p) => p,
-        Err(e) => {
-            return (
-                GATE_FAILED.to_string(),
-                vec![CheckResult {
-                    id: "_protocol".to_string(),
-                    pass: false,
-                    detail: e,
-                }],
-            );
-        }
-    };
+// ─── gate evaluation (derived status) ────────────────────────────────────────
+
+fn evaluate_gate(
+    dir: &Path,
+    state: &State,
+    protocol: &Protocol,
+    gate: &str,
+) -> (String, Vec<CheckResult>) {
     let checks: Vec<&Check> = protocol.checks.iter().filter(|c| c.gate == gate).collect();
     if checks.is_empty() {
-        return (GATE_PASSED.to_string(), vec![]);
+        // No checks declared: passed once any attempt finished, else pending.
+        let any_finished = state
+            .attempts
+            .values()
+            .any(|a| a.gate == gate && a.finished);
+        let status = if any_finished {
+            GATE_PASSED
+        } else {
+            GATE_PENDING
+        };
+        return (status.to_string(), vec![]);
     }
-    let overridden: BTreeSet<&str> = state
-        .overrides
-        .iter()
-        .map(|o| o.check.as_str())
-        .collect();
+    let overridden: BTreeSet<&str> = state.overrides.iter().map(|o| o.check.as_str()).collect();
     let mut results = Vec::new();
     let mut any_fail = false;
     for check in checks {
@@ -1057,7 +1142,7 @@ fn eval_check(dir: &Path, state: &State, check: &Check) -> CheckResult {
         CHECK_EXISTS => eval_exists(dir, check),
         CHECK_AGREE => eval_agree(dir, check),
         CHECK_NEAR => eval_near(dir, check),
-        CHECK_FRESH => eval_fresh(dir, check),
+        CHECK_FRESH => eval_fresh(dir, state, check),
         other => (false, format!("unknown check kind: {other}")),
     };
     CheckResult {
@@ -1067,6 +1152,9 @@ fn eval_check(dir: &Path, state: &State, check: &Check) -> CheckResult {
     }
 }
 
+// Producer and auditor must be distinct actors. Identity (env-stamped) wins
+// over label; matching identity is a hard self-audit. If either side lacks
+// identity, label comparison is the fallback with an explicit note.
 fn eval_audit(state: &State, check: &Check) -> (bool, String) {
     let producers: Vec<&Attempt> = state
         .attempts
@@ -1085,27 +1173,65 @@ fn eval_audit(state: &State, check: &Check) -> (bool, String) {
         return (false, "no audit attempt finished".to_string());
     }
     for v in &auditors {
-        if producers.iter().any(|p| p.actor == v.actor) {
+        if v.report.is_none() {
             return (
                 false,
-                format!("self-audit: actor {} produced and audited", v.actor),
+                format!("audit attempt {} has no report", v.actor_label),
             );
         }
-        if v.report.is_none() {
-            return (false, format!("audit attempt {} has no report", v.actor));
+        for p in &producers {
+            let identity_clash =
+                matches!((&p.actor_identity, &v.actor_identity), (Some(a), Some(b)) if a == b);
+            if identity_clash {
+                return (
+                    false,
+                    format!(
+                        "self-audit: identity {} produced and audited",
+                        v.actor_identity.clone().unwrap_or_default()
+                    ),
+                );
+            }
+            if p.actor_identity.is_none()
+                && v.actor_identity.is_none()
+                && p.actor_label == v.actor_label
+            {
+                return (
+                    false,
+                    format!(
+                        "self-audit: label {} (no identity stamp; set FLOW_ACTOR_ID at spawn)",
+                        v.actor_label
+                    ),
+                );
+            }
         }
     }
-    (true, format!("audited by {} actor(s)", auditors.len()))
+    let stamped = auditors.iter().all(|a| a.actor_identity.is_some());
+    let detail = if stamped {
+        format!("audited by {} distinct actor(s)", auditors.len())
+    } else {
+        format!(
+            "audited by {} actor(s) [label-only; no FLOW_ACTOR_ID]",
+            auditors.len()
+        )
+    };
+    (true, detail)
 }
 
 fn eval_run(dir: &Path, check: &Check) -> (bool, String) {
     let Some(cmd) = check.cmd.as_ref() else {
         return (false, "run check missing cmd".to_string());
     };
-    let output = Command::new("sh").arg("-c").arg(cmd).current_dir(dir).output();
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .current_dir(dir)
+        .output();
     match output {
         Ok(o) if o.status.success() => (true, format!("exit 0: {}", cmd)),
-        Ok(o) => (false, format!("exit {}: {}", o.status.code().unwrap_or(-1), cmd)),
+        Ok(o) => (
+            false,
+            format!("exit {}: {}", o.status.code().unwrap_or(-1), cmd),
+        ),
         Err(e) => (false, format!("spawn failed: {e}")),
     }
 }
@@ -1117,79 +1243,112 @@ fn eval_exists(dir: &Path, check: &Check) -> (bool, String) {
             missing.push(path.clone());
         }
     }
-    for entry in &check.fields {
-        // fields are "<path>:<dotted.field>"
-        let Some((p, f)) = entry.split_once(':') else {
-            missing.push(format!("malformed field {entry}"));
-            continue;
+    for field in &check.fields {
+        let (file, key) = match field.split_once(':') {
+            Some((f, k)) => (f, k),
+            None => {
+                missing.push(format!("{field} (malformed; expected path:field)"));
+                continue;
+            }
         };
-        let full = dir.join(p);
-        if !full.exists() {
-            missing.push(format!("{p} missing"));
-            continue;
-        }
-        let value = read_json(&full).and_then(|v| pick(&v, f));
-        if value.is_none() {
-            missing.push(format!("{p}#{f}"));
+        let json = match read_json(&dir.join(file)) {
+            Some(v) => v,
+            None => {
+                missing.push(format!("{file}:{key} (file missing or not json)"));
+                continue;
+            }
+        };
+        if pick(&json, key).is_none() {
+            missing.push(format!("{file}:{key}"));
         }
     }
     if missing.is_empty() {
-        (true, format!("{} fields/paths present", check.paths.len() + check.fields.len()))
+        let n = check.paths.len() + check.fields.len();
+        (true, format!("{n} declared paths/fields present"))
     } else {
         (false, format!("missing: {}", missing.join(", ")))
     }
 }
 
 fn eval_agree(dir: &Path, check: &Check) -> (bool, String) {
-    if check.against.is_empty() {
-        return (false, "agree check has no `against` entries".to_string());
+    if check.against.len() < 2 {
+        return (
+            false,
+            "agree check needs at least two `against` entries (path:field each)".to_string(),
+        );
     }
-    // Each entry in `against` is "<path>:<dotted.field>"
-    let mut values = Vec::new();
+    let mut values: Vec<(String, serde_json::Value)> = Vec::new();
     for entry in &check.against {
-        let Some((p, f)) = entry.split_once(':') else {
-            return (false, format!("malformed: {entry}"));
+        let (file, key) = match entry.split_once(':') {
+            Some(pair) => pair,
+            None => return (false, format!("malformed against entry: {entry}")),
         };
-        let v = match read_json(&dir.join(p)).and_then(|v| pick(&v, f)) {
+        let json = match read_json(&dir.join(file)) {
             Some(v) => v,
-            None => return (false, format!("not readable: {entry}")),
+            None => return (false, format!("cannot read {file}")),
         };
-        values.push((entry.clone(), v));
+        let value = match pick(&json, key) {
+            Some(v) => v,
+            None => return (false, format!("missing {file}:{key}")),
+        };
+        values.push((entry.clone(), value));
     }
-    let first = &values[0].1;
-    for (entry, v) in &values[1..] {
-        if v != first {
-            return (false, format!("disagreement: {} vs {}", values[0].0, entry));
+    let head = &values[0].1;
+    for (label, value) in values.iter().skip(1) {
+        if value != head {
+            return (
+                false,
+                format!("{} differs from {}", label, values[0].0),
+            );
         }
     }
-    (true, format!("{} sources agree", values.len()))
+    (true, format!("{} entries agree", values.len()))
 }
 
 fn eval_near(dir: &Path, check: &Check) -> (bool, String) {
     if check.compare.is_empty() {
-        return (false, "near check has no `compare` blocks".to_string());
+        return (false, "near check needs [[checks.compare]] entries".to_string());
     }
     let mut details = Vec::new();
     let mut any_fail = false;
     for c in &check.compare {
-        let actual = read_json(&dir.join(&c.actual.path)).and_then(|v| pick_number(&v, &c.actual.field));
-        let reference = read_json(&dir.join(&c.reference.path)).and_then(|v| pick_number(&v, &c.reference.field));
-        let (Some(a), Some(r)) = (actual, reference) else {
-            details.push("not readable".to_string());
-            any_fail = true;
-            continue;
+        let a_path = dir.join(&c.actual.path);
+        let r_path = dir.join(&c.reference.path);
+        let a = match read_json(&a_path).and_then(|v| pick_number(&v, &c.actual.field)) {
+            Some(v) => v,
+            None => {
+                any_fail = true;
+                details.push(format!("missing actual {}:{}", c.actual.path, c.actual.field));
+                continue;
+            }
+        };
+        let r = match read_json(&r_path).and_then(|v| pick_number(&v, &c.reference.field)) {
+            Some(v) => v,
+            None => {
+                any_fail = true;
+                details.push(format!(
+                    "missing reference {}:{}",
+                    c.reference.path, c.reference.field
+                ));
+                continue;
+            }
         };
         let diff = (a - r).abs();
         let pass_abs = c.tolerance.abs.map(|t| diff <= t).unwrap_or(false);
-        let pass_rel = c.tolerance.rel.map(|t| diff / r.abs().max(1e-30) <= t).unwrap_or(false);
+        let pass_rel = c
+            .tolerance
+            .rel
+            .map(|t| diff / r.abs().max(1e-30) <= t)
+            .unwrap_or(false);
         let pass_sigma = c
             .tolerance
             .sigma
-            .and_then(|t| {
+            .map(|t| {
                 c.uncertainty
                     .as_ref()
                     .and_then(|u| read_json(&dir.join(&u.path)).and_then(|v| pick_number(&v, &u.field)))
                     .map(|s| diff / s.abs().max(1e-30) <= t)
+                    .unwrap_or(false)
             })
             .unwrap_or(false);
         let ok = pass_abs || pass_rel || pass_sigma;
@@ -1201,26 +1360,130 @@ fn eval_near(dir: &Path, check: &Check) -> (bool, String) {
     (!any_fail, details.join("; "))
 }
 
-fn eval_fresh(dir: &Path, check: &Check) -> (bool, String) {
+fn eval_fresh(dir: &Path, state: &State, check: &Check) -> (bool, String) {
     if check.paths.is_empty() || check.against.is_empty() {
-        return (false, "fresh check needs `paths` (artifacts) and `against` (sources)".to_string());
+        return (
+            false,
+            "fresh check needs `paths` (artifacts) and `against` (sources)".to_string(),
+        );
     }
-    let oldest_artifact = check
-        .paths
+    for path in &check.paths {
+        let artifact = match state.artifacts.values().find(|a| a.path == *path) {
+            Some(a) => a,
+            None => return (false, format!("no artifact registered for {path}")),
+        };
+        match file_hash(&dir.join(path)) {
+            Ok(h) if h == artifact.hash => {}
+            Ok(_) => return (false, format!("artifact mutated since registration: {path}")),
+            Err(e) => return (false, format!("cannot hash artifact {path}: {e}")),
+        }
+        for source in &check.against {
+            let registered = match artifact.deps.get(source) {
+                Some(h) => h,
+                None => {
+                    return (
+                        false,
+                        format!("no snapshot of {source} for {path}; re-register the artifact"),
+                    )
+                }
+            };
+            match file_hash(&dir.join(source)) {
+                Ok(h) if h == *registered => {}
+                Ok(_) => return (false, format!("source changed since registration: {source}")),
+                Err(e) => return (false, format!("cannot hash source {source}: {e}")),
+            }
+        }
+    }
+    (
+        true,
+        format!("{} artifact(s) and sources unchanged", check.paths.len()),
+    )
+}
+
+fn snapshot_deps(dir: &Path, artifact_path: &str) -> Result<BTreeMap<String, String>> {
+    let protocol = load_protocol(dir)?;
+    let mut deps = BTreeMap::new();
+    for check in &protocol.checks {
+        if check.kind != CHECK_FRESH {
+            continue;
+        }
+        if !check.paths.iter().any(|p| p == artifact_path) {
+            continue;
+        }
+        for source in &check.against {
+            if deps.contains_key(source) {
+                continue;
+            }
+            let resolved = dir.join(source);
+            if !resolved.exists() {
+                return Err(format!(
+                    "fresh-check source missing at registration of {artifact_path}: {source}"
+                ));
+            }
+            deps.insert(source.clone(), file_hash(&resolved)?);
+        }
+    }
+    Ok(deps)
+}
+
+// ─── derived queries ─────────────────────────────────────────────────────────
+
+fn gate_status(dir: &Path, state: &State, protocol: &Protocol, gate: &str) -> String {
+    if !state.gates.contains_key(gate) {
+        return "missing".to_string();
+    }
+    evaluate_gate(dir, state, protocol, gate).0
+}
+
+fn gate_passed(dir: &Path, state: &State, protocol: &Protocol, gate: &str) -> bool {
+    gate_status(dir, state, protocol, gate) == GATE_PASSED
+        && requirements_passed(dir, state, protocol, gate)
+}
+
+fn requirements_passed(dir: &Path, state: &State, protocol: &Protocol, gate: &str) -> bool {
+    let Some(spec) = state.gates.get(gate) else {
+        return false;
+    };
+    spec.requires
         .iter()
-        .filter_map(|p| mtime(&dir.join(p)))
-        .min();
-    let newest_source = check
-        .against
-        .iter()
-        .filter_map(|p| mtime(&dir.join(p)))
-        .max();
-    match (oldest_artifact, newest_source) {
-        (Some(a), Some(s)) if a >= s => (true, "artifacts newer than sources".to_string()),
-        (Some(_), Some(_)) => (false, "artifact older than a source".to_string()),
-        _ => (false, "missing artifact or source mtime".to_string()),
+        .all(|required| gate_status(dir, state, protocol, required) == GATE_PASSED)
+}
+
+fn print_deviation(pad: &str, id: &str, statement: &str, reason: Option<&str>) {
+    let trimmed = reason.map(str::trim).filter(|r| !r.is_empty());
+    if let Some(r) = trimmed {
+        println!("{pad}  ⚠ {id} — {statement} ({r})");
+    } else {
+        println!("{pad}  ⚠ {id} — {statement}");
     }
 }
+
+fn ready_gates(dir: &Path, state: &State, protocol: &Protocol) -> Vec<String> {
+    state
+        .gates
+        .keys()
+        .filter(|gate| {
+            let status = gate_status(dir, state, protocol, gate);
+            status != GATE_PASSED && requirements_passed(dir, state, protocol, gate)
+        })
+        .cloned()
+        .collect()
+}
+
+// ─── option parsing ──────────────────────────────────────────────────────────
+
+fn option_value(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+}
+
+fn required_option(args: &[String], flag: &str) -> Result<String> {
+    option_value(args, flag).ok_or_else(|| format!("missing {flag}"))
+}
+
+// ─── json helpers ────────────────────────────────────────────────────────────
 
 fn read_json(path: &Path) -> Option<serde_json::Value> {
     let text = fs::read_to_string(path).ok()?;
@@ -1239,9 +1502,7 @@ fn pick_number(value: &serde_json::Value, field: &str) -> Option<f64> {
     pick(value, field)?.as_f64()
 }
 
-fn mtime(path: &Path) -> Option<SystemTime> {
-    fs::metadata(path).and_then(|m| m.modified()).ok()
-}
+// ─── state.toml projection ───────────────────────────────────────────────────
 
 fn write_state(dir: &Path, state: &State) -> Result<()> {
     fs::create_dir_all(progress_dir(dir)).map_err(|e| e.to_string())?;
@@ -1257,7 +1518,11 @@ struct StateFile {
     attempts: BTreeMap<String, StateAttempt>,
     artifacts: BTreeMap<String, StateArtifact>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    overrides: Vec<StateOverride>,
+    overrides: Vec<StateRecord>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    decisions: Vec<StateDecision>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    deviations: Vec<StateDeviation>,
     children: StateChildren,
 }
 
@@ -1268,7 +1533,6 @@ struct StateFlow {
 
 #[derive(Serialize)]
 struct StateGate {
-    status: String,
     requires: Vec<String>,
     invalidates: Vec<String>,
 }
@@ -1278,7 +1542,9 @@ struct StateAttempt {
     seq: u64,
     gate: String,
     kind: String,
-    actor: String,
+    actor_label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actor_identity: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     executor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1295,14 +1561,43 @@ struct StateArtifact {
     hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     producer: Option<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    deps: BTreeMap<String, String>,
 }
 
 #[derive(Serialize)]
-struct StateOverride {
+struct StateRecord {
     check: String,
     gate: String,
     reason: String,
-    actor: String,
+    actor_label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actor_identity: Option<String>,
+    at: String,
+}
+
+#[derive(Serialize)]
+struct StateDecision {
+    id: String,
+    question: String,
+    choice: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    actor_label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actor_identity: Option<String>,
+    at: String,
+}
+
+#[derive(Serialize)]
+struct StateDeviation {
+    id: String,
+    statement: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    actor_label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    actor_identity: Option<String>,
     at: String,
 }
 
@@ -1325,7 +1620,6 @@ impl From<&State> for StateFile {
                     (
                         id.clone(),
                         StateGate {
-                            status: gate_status(state, id),
                             requires: gate.requires.clone(),
                             invalidates: gate.invalidates.clone(),
                         },
@@ -1342,7 +1636,8 @@ impl From<&State> for StateFile {
                             seq: attempt.seq,
                             gate: attempt.gate.clone(),
                             kind: attempt.kind.clone(),
-                            actor: attempt.actor.clone(),
+                            actor_label: attempt.actor_label.clone(),
+                            actor_identity: attempt.actor_identity.clone(),
                             executor: attempt.executor.clone(),
                             command: attempt.command.clone(),
                             finished: attempt.finished,
@@ -1362,6 +1657,7 @@ impl From<&State> for StateFile {
                             kind: artifact.kind.clone(),
                             hash: artifact.hash.clone(),
                             producer: artifact.producer.clone(),
+                            deps: artifact.deps.clone(),
                         },
                     )
                 })
@@ -1369,12 +1665,38 @@ impl From<&State> for StateFile {
             overrides: state
                 .overrides
                 .iter()
-                .map(|o| StateOverride {
+                .map(|o| StateRecord {
                     check: o.check.clone(),
                     gate: o.gate.clone(),
                     reason: o.reason.clone(),
-                    actor: o.actor.clone(),
+                    actor_label: o.actor_label.clone(),
+                    actor_identity: o.actor_identity.clone(),
                     at: o.at.clone(),
+                })
+                .collect(),
+            decisions: state
+                .decisions
+                .iter()
+                .map(|d| StateDecision {
+                    id: d.id.clone(),
+                    question: d.question.clone(),
+                    choice: d.choice.clone(),
+                    reason: d.reason.clone(),
+                    actor_label: d.actor_label.clone(),
+                    actor_identity: d.actor_identity.clone(),
+                    at: d.at.clone(),
+                })
+                .collect(),
+            deviations: state
+                .deviations
+                .iter()
+                .map(|d| StateDeviation {
+                    id: d.id.clone(),
+                    statement: d.statement.clone(),
+                    reason: d.reason.clone(),
+                    actor_label: d.actor_label.clone(),
+                    actor_identity: d.actor_identity.clone(),
+                    at: d.at.clone(),
                 })
                 .collect(),
             children: StateChildren {
@@ -1384,33 +1706,7 @@ impl From<&State> for StateFile {
     }
 }
 
-fn option_value(args: &[String], flag: &str) -> Option<String> {
-    args.windows(2)
-        .find(|pair| pair[0] == flag)
-        .map(|pair| pair[1].clone())
-}
-
-fn required_option(args: &[String], flag: &str) -> Result<String> {
-    match option_value(args, flag) {
-        Some(value) if value.starts_with("--") => Err(format!("{flag} requires a value")),
-        Some(value) => Ok(value),
-        None => Err(format!("missing {flag}")),
-    }
-}
-
-fn option_list(args: &[String], flag: &str) -> Result<Vec<String>> {
-    match option_value(args, flag) {
-        Some(value) if value.trim().is_empty() => Ok(Vec::new()),
-        Some(value) if value.starts_with("--") => Err(format!("{flag} requires a value")),
-        Some(value) => Ok(value
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .collect()),
-        None => Ok(Vec::new()),
-    }
-}
+// ─── misc ────────────────────────────────────────────────────────────────────
 
 fn file_hash(path: &Path) -> Result<String> {
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;

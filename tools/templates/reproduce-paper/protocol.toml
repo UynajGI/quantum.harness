@@ -40,7 +40,7 @@ assumption = false
 #   exists  — declared paths/fields are present
 #   agree   — declared field values match across artifacts
 #   near    — numeric value within tolerance of a reference
-#   fresh   — artifact mtime ≥ source mtime
+#   fresh   — artifact and declared sources unchanged since `flow artifact add`
 # Paper-specific or skill-specific names belong in the data values (paths,
 # claims, ids) — never in the `kind` field.
 # `claims = [...]` on each check is informational metadata for /report's chip

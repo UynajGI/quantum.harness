@@ -1125,35 +1125,32 @@ fn eval_check(dir: &Path, state: &State, check: &Check) -> CheckResult {
     }
 }
 
-// audit: a verify-kind attempt on this gate must exist, be finished, and
-// carry an actor distinct from any non-verify attempt's actor on the same
-// gate. Implements the "author cannot be the sole verifier" invariant.
 fn eval_audit(state: &State, check: &Check) -> (bool, String) {
     let producers: Vec<&Attempt> = state
         .attempts
         .values()
-        .filter(|a| a.gate == check.gate && a.kind != "verify" && a.finished)
+        .filter(|a| a.gate == check.gate && a.kind != "audit" && a.finished)
         .collect();
-    let verifiers: Vec<&Attempt> = state
+    let auditors: Vec<&Attempt> = state
         .attempts
         .values()
-        .filter(|a| a.gate == check.gate && a.kind == "verify" && a.finished)
+        .filter(|a| a.gate == check.gate && a.kind == "audit" && a.finished)
         .collect();
-    if verifiers.is_empty() {
-        return (false, "no verify attempt finished".to_string());
+    if auditors.is_empty() {
+        return (false, "no audit attempt finished".to_string());
     }
-    for v in &verifiers {
+    for v in &auditors {
         if producers.iter().any(|p| p.actor == v.actor) {
             return (
                 false,
-                format!("self-verification: actor {} produced and verified", v.actor),
+                format!("self-audit: actor {} produced and audited", v.actor),
             );
         }
         if v.report.is_none() {
-            return (false, format!("verify attempt {} has no report", v.actor));
+            return (false, format!("audit attempt {} has no report", v.actor));
         }
     }
-    (true, format!("verified by {} actor(s)", verifiers.len()))
+    (true, format!("audited by {} actor(s)", auditors.len()))
 }
 
 fn eval_run(dir: &Path, check: &Check) -> (bool, String) {

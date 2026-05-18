@@ -363,7 +363,7 @@ fn stale_attempt_cannot_finish_after_newer_one_finished() {
         run_dir.to_str().unwrap(),
         "verify",
         "--kind",
-        "verify",
+        "audit",
         "--actor",
         "agent:slow-reviewer",
     ]);
@@ -373,7 +373,7 @@ fn stale_attempt_cannot_finish_after_newer_one_finished() {
         run_dir.to_str().unwrap(),
         "verify",
         "--kind",
-        "verify",
+        "audit",
         "--actor",
         "agent:current-reviewer",
     ]);
@@ -633,13 +633,13 @@ gate = "protocol"
         producer.trim(),
     ]);
 
-    let verifier = assert_ok(&[
+    let auditor = assert_ok(&[
         "attempt",
         "start",
         run_dir.to_str().unwrap(),
         "protocol",
         "--kind",
-        "verify",
+        "audit",
         "--actor",
         "agent:author", // SAME actor — should fail audit
     ]);
@@ -649,12 +649,11 @@ gate = "protocol"
         "attempt",
         "finish",
         run_dir.to_str().unwrap(),
-        verifier.trim(),
+        auditor.trim(),
         "--report",
         report.to_str().unwrap(),
     ]);
 
-    // Status should now reflect audit failure.
     let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
     assert!(status.lines().any(|line| line.starts_with("protocol\tfailed")));
 }
@@ -700,13 +699,13 @@ gate = "protocol"
         producer.trim(),
     ]);
 
-    let verifier = assert_ok(&[
+    let auditor = assert_ok(&[
         "attempt",
         "start",
         run_dir.to_str().unwrap(),
         "protocol",
         "--kind",
-        "verify",
+        "audit",
         "--actor",
         "agent:independent-reviewer",
     ]);
@@ -716,7 +715,7 @@ gate = "protocol"
         "attempt",
         "finish",
         run_dir.to_str().unwrap(),
-        verifier.trim(),
+        auditor.trim(),
         "--report",
         report.to_str().unwrap(),
     ]);

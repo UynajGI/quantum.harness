@@ -5,7 +5,7 @@
 The tool is intentionally small:
 
 - `gate` — a checkpoint that can pass, fail, block, or become invalidated.
-- `attempt` — one actor trying to satisfy one gate. Roles are metadata: `--kind verify`, `--actor agent:source-verifier`, `--executor slurm:hpc2`, etc.
+- `attempt` — one actor trying to satisfy one gate. Roles are metadata: `--kind audit`, `--actor agent:source-reviewer`, `--executor slurm:hpc2`, etc.
 - `artifact` — a file with a stable content hash and optional producer attempt.
 - `child` — another flow attached to a parent campaign.
 
@@ -37,9 +37,9 @@ alias flow=tools/cli/flow
 flow init results/run-a --template tools/flow/templates/reproduce-paper.toml
 flow next results/run-a
 
-attempt=$(flow attempt start results/run-a protocol --kind verify --actor agent:source-verifier)
+attempt=$(flow attempt start results/run-a protocol --kind audit --actor agent:source-reviewer)
 flow artifact add results/run-a protocol results/run-a/protocol.toml --kind protocol --producer "$attempt"
-flow attempt finish results/run-a "$attempt" --status pass --report results/run-a/verify/protocol.md
+flow attempt finish results/run-a "$attempt" --report results/run-a/verify/protocol.md
 
 flow require results/run-a protocol
 flow status results/run-a

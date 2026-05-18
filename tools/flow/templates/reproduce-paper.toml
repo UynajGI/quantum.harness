@@ -37,3 +37,8 @@ invalidates = ["close"]
 [[gates]]
 id = "close"
 requires = ["assembly"]
+invalidates = ["report"]
+
+[[gates]]
+id = "report"
+requires = ["close"]

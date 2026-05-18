@@ -31,17 +31,15 @@ A `<run-dir>` containing:
 
 ## Workflow
 
-1. **Open the report gate.** `tools/cli/flow gate add <run-dir> report --requires close`. (Idempotent — skip if already added.)
+1. **Verify close passed.** `flow require <run-dir> close`. If it errors, stop and surface the blocker via the host's option API. The `report` gate is pre-declared in `tools/flow/templates/reproduce-paper.toml` with `requires = ["close"]`.
 
-2. **Verify close passed.** `flow require <run-dir> close`. If it errors, stop and surface the blocker via the host's option API.
+2. **Dispatch the polish subagent** as a `produce`-kind attempt on the `report` gate. The subagent reads the full evidence pack and writes `<run-dir>/editorial.json`. Brief: terse scientific tone, ≤ 100 words above the fold, every sentence carries a `sourced_by` pointer to a file:line in the evidence pack. Use the same model id and effort as the main agent. The subagent must be a distinct actor from whoever authored the run.
 
-3. **Dispatch the polish subagent** as a `produce`-kind attempt on the `report` gate. The subagent reads the full evidence pack and writes `<run-dir>/editorial.json`. Brief: terse scientific tone, ≤ 100 words above the fold, every sentence carries a `sourced_by` pointer to a file:line in the evidence pack. Use the same model id and effort as the main agent. The subagent must be a distinct actor from whoever authored the run.
+3. **Render the HTML.** `python tools/skills/report/scripts/render.py <run-dir>`. The renderer is mechanical — it composes the figure-first template, falls back to declared statements when editorial fields are missing, and stamps the provenance footer.
 
-4. **Render the HTML.** `python tools/skills/report/scripts/render.py <run-dir>`. The renderer is mechanical — it composes the figure-first template, falls back to declared statements when editorial fields are missing, and stamps the provenance footer.
+4. **Dispatch the audit subagent** as an `audit`-kind attempt on the `report` gate (`--actor` distinct from the polish actor). The subagent traces every editorial sentence to its `sourced_by` pointer, checks DESIGN.md compliance, checks mobile rendering. Writes `verify/verify_report_<date>.md`. Finish the attempt with `--report <path>`.
 
-5. **Dispatch the audit subagent** as an `audit`-kind attempt on the `report` gate. The subagent traces every editorial sentence to its `sourced_by` pointer, checks DESIGN.md compliance, checks mobile rendering. Writes `verify/verify_report_<date>.md`. Finish the attempt with `--report <path>`.
-
-6. **`flow attempt finish`** on the audit attempt. `flow` runs the `report` gate's `[[checks]]` and derives status. If pass, the run ships. If fail, see *Failed checks*.
+5. **`flow attempt finish`** on the audit attempt. `flow` runs the `report` gate's `[[checks]]` and derives status. If pass, the run ships. If fail, see *Failed checks*.
 
 Output: `<run-dir>/report_<run-id>_<date>.html` plus `report_latest.html` symlink.
 

@@ -60,6 +60,7 @@ struct Artifact {
 #[derive(Clone, Debug)]
 struct Override {
     check: String,
+    gate: String,
     reason: String,
     actor: String,
     at: String,
@@ -270,9 +271,13 @@ fn cmd_next(args: &[String]) -> Result<()> {
         return Err("usage: harness-flow next <dir>".to_string());
     }
     let dir = Path::new(&args[0]);
+    let dir_arg = &args[0];
     let state = with_flow_lock(dir, || rebuild(dir))?;
     for gate in ready_gates(&state) {
         println!("{gate}");
+        println!(
+            "  flow attempt start {dir_arg} {gate} --kind <kind> --actor agent:<role>"
+        );
     }
     Ok(())
 }
@@ -867,6 +872,7 @@ fn apply_event(state: &mut State, event: Event) -> Result<()> {
         "override_recorded" => {
             state.overrides.push(Override {
                 check: event.required_string("check")?,
+                gate: event.required_string("gate")?,
                 reason: event.required_string("reason")?,
                 actor: event.required_string("actor")?,
                 at: event.required_string("at")?,
@@ -889,11 +895,7 @@ fn print_status(dir: &Path, state: &State, indent: usize, recursive: bool) -> Re
     println!("{pad}flow {label}");
     for gate in state.gates.keys() {
         let status = gate_status(state, gate);
-        let n_over = state
-            .overrides
-            .iter()
-            .filter(|o| state.gate_status.contains_key(gate) && over_belongs_to(state, &o.check, gate))
-            .count();
+        let n_over = state.overrides.iter().filter(|o| o.gate == *gate).count();
         if n_over > 0 {
             println!("{pad}{gate}\t{status}\t⊘ {n_over}");
         } else {
@@ -903,7 +905,7 @@ fn print_status(dir: &Path, state: &State, indent: usize, recursive: bool) -> Re
     if !state.overrides.is_empty() {
         println!("{pad}overrides");
         for o in &state.overrides {
-            println!("{pad}  ⊘ {} — {}", o.check, o.reason);
+            println!("{pad}  ⊘ {} ({}) — {}", o.check, o.gate, o.reason);
         }
     }
     if recursive && !state.children.is_empty() {
@@ -916,13 +918,6 @@ fn print_status(dir: &Path, state: &State, indent: usize, recursive: bool) -> Re
         }
     }
     Ok(())
-}
-
-// Best-effort lookup: an override targets a check, and the check's gate is
-// declared in protocol.toml. We don't re-load protocol here for status print;
-// callers that need accurate counts run `flow check` or read events directly.
-fn over_belongs_to(_state: &State, _check: &str, _gate: &str) -> bool {
-    true
 }
 
 fn ready_gates(state: &State) -> Vec<String> {
@@ -1363,6 +1358,7 @@ struct StateArtifact {
 #[derive(Serialize)]
 struct StateOverride {
     check: String,
+    gate: String,
     reason: String,
     actor: String,
     at: String,
@@ -1433,6 +1429,7 @@ impl From<&State> for StateFile {
                 .iter()
                 .map(|o| StateOverride {
                     check: o.check.clone(),
+                    gate: o.gate.clone(),
                     reason: o.reason.clone(),
                     actor: o.actor.clone(),
                     at: o.at.clone(),

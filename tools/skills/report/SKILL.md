@@ -7,7 +7,7 @@ description: Use after a reproduction run completes to render a shareable single
 
 Thin orchestrator. Renders a figure-first HTML page from a run dir whose `close` gate has passed. Audience: collaborators, grad students, lab visitors — `~5 seconds` to decide if the page is worth their time.
 
-Discipline lives in `protocol.toml`'s `[[checks]]`, evaluated by `tools/cli/flow`. This skill only sequences the steps and dispatches the subagents.
+Discipline lives in `protocol.toml`'s `[[checks]]`, evaluated by `tools/cli/flow`. This skill only sequences the steps and dispatches real host subagents. Role text is not subagent provenance.
 
 ## When to activate
 
@@ -33,11 +33,11 @@ A `<run-dir>` containing:
 
 1. **Verify close passed.** `flow require <run-dir> close`. If it errors, stop and surface the blocker via the host's option API. The `report` gate is pre-declared in `tools/flow/templates/reproduce-paper.toml` with `requires = ["close"]`.
 
-2. **Dispatch the polish subagent** as a `report`-kind attempt on the `report` gate. The subagent reads the full evidence pack and writes `<run-dir>/editorial.json`. Brief: terse scientific tone, ≤ 100 words above the fold, every sentence carries a `sourced_by` pointer to a file:line in the evidence pack. Use the same model id and effort as the main agent. The subagent must be a distinct actor from whoever authored the run. After the subagent returns, register the file: `flow artifact add <run-dir> editorial <run-dir>/editorial.json --kind editorial --producer <attempt>`, then `flow attempt finish <run-dir> <attempt>`. The registration pins editorial.json's hash so the protocol's `editorial_fresh` check catches any post-audit mutation.
+2. **Dispatch the polish subagent** as a `report`-kind attempt on the `report` gate. MUST SPAWN it with the host subagent/delegation tool. The subagent reads the full evidence pack and writes `<run-dir>/editorial.json`. Brief: terse scientific tone, ≤ 100 words above the fold, every sentence carries a `sourced_by` pointer to a file:line in the evidence pack. Use the same model id and effort as the main agent. The subagent must be a distinct actor from whoever authored the run. After the subagent returns, register the file: `flow artifact add <run-dir> editorial <run-dir>/editorial.json --kind editorial --producer <attempt>`, then `flow attempt finish <run-dir> <attempt>`. The registration pins editorial.json's hash so the protocol's `editorial_fresh` check catches any post-audit mutation.
 
 3. **Render the HTML.** `python tools/skills/report/scripts/render.py <run-dir>`. The renderer is mechanical — reads `flow status --json` for all derived state (gate verdicts, claim verdicts, overrides, deviations, pending), composes the figure-first template, falls back to declared statements when editorial fields are missing, and stamps the provenance footer.
 
-4. **Dispatch the audit subagent** as an `audit`-kind attempt on the `report` gate (`--actor` distinct from the polish actor). The subagent traces every editorial sentence to its `sourced_by` pointer, checks DESIGN.md compliance, checks mobile rendering. Writes `verify/verify_report_<date>.md` + sibling `verify_report_<date>.toml` with top-level `status = "pass" | "warn" | "fail"`.
+4. **Dispatch the audit subagent** as an `audit`-kind attempt on the `report` gate (`--actor` distinct from the polish actor). MUST SPAWN it with the host subagent/delegation tool. The subagent traces every editorial sentence to its `sourced_by` pointer, checks DESIGN.md compliance, checks mobile rendering. Writes `verify/verify_report_<date>.md` + sibling `verify_report_<date>.toml` with top-level `status = "pass" | "warn" | "fail"`.
 
 5. **`flow attempt finish`** on the audit attempt with `--report <md-path>`. Flow parses the sidecar verdicts, runs the `report` gate's `[[checks]]` (audit + editorial_fresh), and derives status. If pass, the run ships. If fail, see *Failed checks*.
 
@@ -72,6 +72,7 @@ The ⊘ icon distinguishes bypasses from declared deviations (⚠). Clean runs s
 - **Polish subagent**: read-only on `<run-dir>`; writes only `editorial.json`. Same model id / effort / sandbox as the main agent.
 - **Audit subagent**: read-only; writes only `verify/verify_report_<date>.md`. Different actor id from the polish subagent.
 - The main agent never authors prose. Editorial sentences and audit findings come from subagents.
+- If a host subagent cannot be spawned, stop with `blocked: subagent unavailable` and leave the gate open. Do not roleplay, self-author, or invent actor ids.
 
 ## Mandatory genre elements
 

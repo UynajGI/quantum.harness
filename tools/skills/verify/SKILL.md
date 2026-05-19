@@ -5,9 +5,11 @@ description: Use after writing or modifying an important artifact (protocol TOML
 
 # verify
 
-Dispatch a high-effort review subagent to audit an artifact against its declared reference. Generic over target. The subagent reads both sources end-to-end and returns a structured diff report. Never modifies anything.
+MUST SPAWN a real high-effort review subagent to audit an artifact against its declared reference. Generic over target. The subagent reads both sources end-to-end and returns a structured diff report. Never modifies anything.
 
 The verifier must be a **different actor** from the artifact's author. Flow's `audit` check kind enforces this mechanically; this skill is the dispatcher.
+
+Do not roleplay the verifier. Do not write the verifier report yourself. Do not invent reviewer ids. Do not record or finish a flow audit unless the spawned subagent actually returned the review. If the host cannot spawn a verifier, stop with `blocked: verifier subagent unavailable` and leave the gate open.
 
 ## When to activate
 
@@ -24,7 +26,7 @@ The verifier must be a **different actor** from the artifact's author. Flow's `a
 
 ## Dispatch
 
-Spawn the review subagent using the same model id, reasoning/effort, sandbox, approval policy, and tool access as the main agent. **Same actor cannot author and verify** — flow rejects the `audit` check if `--actor` matches the producer's actor.
+MUST SPAWN the review subagent using the host subagent/delegation tool, with the same model id, reasoning/effort, sandbox, approval policy, and tool access as the main agent. **Same actor cannot author and verify** — flow rejects the `audit` check if `--actor` matches the producer's actor. Record the returned subagent id/name as `reviewer`.
 
 The verifier brief includes:
 
@@ -131,8 +133,8 @@ status = "pass"      # pass | warn | fail
 mode = "protocol"    # protocol | plan | kb-card | script | result | mismatch | close
 target = "protocol.toml"
 hash = "sha256:..."  # optional, but required when target freshness matters
-author = "codex:<session>"
-reviewer = "codex:<session>"
+author = "codex:<author-session>"
+reviewer = "subagent:<returned-id>"
 
 [[verdicts]]
 claim = "claim.scaling_exponent"
@@ -195,6 +197,9 @@ In a flow-backed run, the caller records this audit as an `audit`-kind attempt o
 - Treating old scripts, plans, data, or figures as evidence without current hashes.
 - Adding paper- or domain-specific kind names to `[[checks]]`.
 - Closing a final run report without a `close`-mode review.
+- Roleplaying a verifier in the main agent.
+- Inventing a reviewer id or using role text as reviewer provenance.
+- Finishing a flow audit without a returned subagent review.
 - Single-line "looks fine" report — the structured per-axis table is the deliverable.
 - Downgrading subagent model or effort.
 - Subagent prescribing fixes / writing an `## Action items` section.

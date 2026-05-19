@@ -35,7 +35,7 @@ Each gate's contract lives in `protocol.toml` as `[[checks]]`. `flow` runs the c
 
 3. **Author the contract.** Fill the rest of `protocol.toml` from the primary source: `[entry]`, `[[claims]]`, `[[cells]]`, `[[checks]]`, `[[figures]]`, optional `[[deviations]]`, `[[repairs]]`, and `[[pending]]`. Each executable cell declares one route with one-word fields: `method`, `stack`, `route`, `source`, `check`, `state`, `scope`. Use one-word check kinds: `audit`, `run`, `exists`, `agree`, `near`, `fresh`, `cover`, `support`; keep check ids unique because they are override handles. Use attempt roles `audit`, `trial`, `run`, `report`.
 
-4. **Audit the contract.** Start an `audit`-kind attempt on the `protocol` gate with a verifier subagent (different `--actor` from whoever drafted the protocol). The verifier writes a report; finish the attempt with `--report <path>`. `flow` checks actors differ and the report exists.
+4. **Audit the contract.** MUST SPAWN a real verifier subagent for an `audit`-kind attempt on the `protocol` gate (different `--actor` from whoever drafted the protocol). Do not write the verifier report yourself. If no verifier can be spawned, stop with `blocked: verifier subagent unavailable` and leave the gate open. Finish the attempt only after the verifier returns a report, using `--report <path>`.
 
 5. **Plan the figure graph.** Author `results/<run>/reproduce-plan.toml` (figure ids, categorisations — substantive / methodology / verification / cross-check — dependency edges, and the `cell` ids that produce them). Start and finish the `plan` attempt.
 
@@ -56,7 +56,7 @@ Each gate's contract lives in `protocol.toml` as `[[checks]]`. `flow` runs the c
 - **Parameter sweeps** → `/parameter-scan`
 - **Critical scaling** → `/scaling-fit`
 - **Cross-checks** → `/cross-method-check`
-- **Audits** (gate audit attempts in any mode) → spawn a verifier subagent with the host's option API or direct dispatch; pass it the protocol + primary source + artifact under review; have it write `verify/verify_<artifact>_<date>.md`; record the audit attempt with the verifier's actor id.
+- **Audits** (gate audit attempts in any mode) → MUST SPAWN a real verifier subagent with the host subagent/delegation tool; pass it the protocol + primary source + artifact under review; have it write `verify/verify_<artifact>_<date>.md`; record the audit attempt with the returned verifier actor id. Role text is not verification.
 - **Cluster execution** → `/slurm` (called by `/parameter-scan`).
 - **User-facing forks** → host platform's option API (Claude Code: `AskUserQuestion`; Codex: equivalent). Three options max, recommended first.
 

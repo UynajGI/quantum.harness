@@ -27,7 +27,7 @@
 
   "checks": [
     {
-      "_comment": "Only for [[checks]] tagged report=true or with audience-facing kind (command, trusted_reference, limit, symmetry, cross_method). Internal mechanical checks (manifest_fields, freshness, manifest_consensus) do NOT get chips.",
+      "_comment": "Only for [[checks]] tagged audience=true. Mechanical checks such as cover, exists, agree, and fresh should stay internal unless the protocol author intentionally exposes them.",
       "id": "<protocol check id>",
       "display_label": "<short human label, e.g. 'symmetry sector', 'limit-check L=8'>",
       "popover": "<ONE SENTENCE: what was checked + outcome>",

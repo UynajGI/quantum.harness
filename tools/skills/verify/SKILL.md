@@ -54,7 +54,7 @@ Compare the protocol against declared primary sources.
 1. **Source authority** — only `primary` rows support paper-derived claims; `hint` rows require an explicit assumption flag.
 2. **Claim support** — each claim cites a primary passage or is marked `assumption=true`.
 3. **Check coverage** — each non-assumption claim is covered by ≥1 `[[checks]]` entry or by a justified deviation.
-4. **Generic check shape** — checks use one of the six kinds: `audit`, `run`, `exists`, `agree`, `near`, `fresh`. No paper-specific or domain-specific kind names.
+4. **Generic check shape** — checks use one of the seven kinds: `audit`, `run`, `exists`, `agree`, `near`, `fresh`, `cover`; ids are unique override handles. No paper-specific or domain-specific kind names.
 5. **Deviation clarity** — declared differences from the paper are scoped, claim-tagged, and have their own checks.
 6. **Gate completeness** — every gate the flow template declares has checks sufficient to prevent stale or unsupported artifacts from passing.
 
@@ -67,7 +67,7 @@ Compare `reproduce-plan.toml` and `run_spec.json` against the protocol and metho
 1. **Claim-to-route coverage** — every non-assumption claim has an executable route, artifact target, and check.
 2. **Figure dependency graph** — shared artifacts and edges consistent with the protocol.
 3. **Run-spec provenance** — cells carry source ids, claim ids, deviation ids, stack identity, settings.
-4. **Trusted-reference reachability** — the chosen reference exercises the production code path at easier scale.
+4. **Trusted-reference reachability** — the chosen reference exercises the run code path at easier scale.
 5. **Hint quarantine** — old data, old figures, old plans never serve as evidence.
 
 Severity tags: `covered`, `missing-route`, `plan-gap`, `stale-dependency`, `provenance-gap`, `weak-reference`, `hint-leak`.

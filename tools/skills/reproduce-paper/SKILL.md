@@ -22,7 +22,7 @@ Thin orchestrator. The discipline lives in `protocol.toml`'s `[[checks]]`, evalu
 ## Spine
 
 ```
-source → protocol → plan → script → trusted_check → production → assembly → close
+source → protocol → plan → script → trust → run → assemble → close
 ```
 
 Each gate's contract lives in `protocol.toml` as `[[checks]]`. `flow` runs the checks on `flow attempt finish` and derives the gate status. The agent never declares pass.
@@ -31,7 +31,7 @@ Each gate's contract lives in `protocol.toml` as `[[checks]]`. `flow` runs the c
 
 1. **Init the ledger.** `tools/cli/flow init results/<run> --template tools/flow/templates/reproduce-paper.toml`. This is the first run-dir action.
 
-2. **Author the contract.** Copy `tools/templates/reproduce-paper/protocol.toml` to `results/<run>/protocol.toml` and fill it from the primary source: `[artifact]`, `[[sources]]`, `[[claims]]`, `[[checks]]`, `[[figures]]`, optional `[[deviations]]` and `[[pending]]`. Use one-word check kinds: `audit`, `run`, `exists`, `agree`, `near`, `fresh`.
+2. **Author the contract.** Copy `tools/templates/reproduce-paper/protocol.toml` to `results/<run>/protocol.toml` and fill it from the primary source: `[artifact]`, `[[sources]]`, `[[claims]]`, `[[checks]]`, `[[figures]]`, optional `[[deviations]]` and `[[pending]]`. Use one-word check kinds: `audit`, `run`, `exists`, `agree`, `near`, `fresh`, `cover`; keep check ids unique because they are override handles.
 
 3. **Audit the contract.** Start an `audit`-kind attempt on the `protocol` gate with a verifier subagent (different `--actor` from whoever drafted the protocol). The verifier writes a report; finish the attempt with `--report <path>`. `flow` checks actors differ and the report exists.
 
@@ -39,9 +39,9 @@ Each gate's contract lives in `protocol.toml` as `[[checks]]`. `flow` runs the c
 
 5. **Implement scripts.** One per figure (or one per stage). Start a `produce` attempt on `script`; register the script as an artifact (`flow artifact add`); start a separate `audit` attempt; finish both.
 
-6. **Trusted reference.** For each substantive figure, run the script at a point where the answer is known (analytic limit, exact small instance, official benchmark). Declare the check as `kind = "near"`. Failure here blocks production.
+6. **Trust.** For each substantive figure, run the script at a point where the answer is known (analytic limit, exact small instance, official benchmark). Declare the check as `kind = "near"`. Failure here blocks `run`.
 
-7. **Production compute.** Dispatch via `/parameter-scan` + `/slurm` (or the declared primitive). The cell wrappers register manifests as artifacts. Production gate's `[[checks]]` enforce `exists`, `agree`, `fresh`.
+7. **Run.** Dispatch via `/parameter-scan` + `/slurm` (or the declared primitive). The cell wrappers register manifests as artifacts. The `run` gate's `[[checks]]` enforce `cover`, `exists`, `agree`, `fresh`.
 
 8. **Assemble close.** Walk the run dir; generate `consolidated.{jl,py}` (all parameters explicit) and `run-report.md`. For each figure produce `figs/<id>.png` plus `figs/<id>.json` (interactive plot source). Independently audit the close.
 
@@ -60,17 +60,18 @@ Each gate's contract lives in `protocol.toml` as `[[checks]]`. `flow` runs the c
 
 When `flow attempt finish` reports a failing check:
 
-1. **Repair the evidence** — fix the artifact, run a new attempt.
-2. **Record a deviation** — `flow deviate <run> --id <id> --statement "..." --reason "..."` for runtime departures, or declare in `protocol.toml`'s `[[deviations]]` upfront. Both surface as ⚠ in `flow status`.
-3. **Record a decision** — at any runtime fork the user hasn't pre-specified, present `AskUserQuestion` then `flow decide <run> --id <id> --question "..." --choice "..."`. Decisions surface in `flow status`.
-4. **Override** — `flow override <run> <check-id> --reason "<text>"`. The override is recorded forever; downstream artifacts show ⊘.
-5. **Stop** — always a real option.
+1. **Backchain first** — inspect the earliest failed gate and its declared inputs. Do not patch a downstream report to hide an upstream failure.
+2. **Repair the evidence** — fix the artifact, run a new attempt.
+3. **Record a deviation** — `flow deviate <run> --id <id> --statement "..." --reason "..."` for runtime departures, or declare in `protocol.toml`'s `[[deviations]]` upfront. Both surface as ⚠ in `flow status`.
+4. **Record a decision** — at any runtime fork the user hasn't pre-specified, present `AskUserQuestion` then `flow decide <run> --id <id> --question "..." --choice "..."`. Decisions surface in `flow status`.
+5. **Override** — `flow override <run> <check-id> --reason "<text>"`. The override is recorded forever; downstream artifacts show ⊘.
+6. **Stop** — always a real option.
 
 Never edit the script, the protocol, or the run report to *make* a check pass without changing the underlying evidence.
 
 ## Closeout
 
-End every turn with `tools/cli/flow status <run>` (or `flow status <run> --json` for tools). That is the canonical projection — gates in DAG order with ▶ on the next runnable, ⚠ deviations, ⊘ overrides, recorded decisions, per-claim verdicts, pending obligations. Do not author a closeout paragraph in chat; the truthful summary always lives in the projection.
+End every turn with `tools/cli/flow status <run>` (or `flow status <run> --json` for tools). The default projection is terse: current gate, first blocker, next command. Use `flow status <run> --full` only when a human asks for details. Do not author a separate closeout paragraph that upgrades the gate status; the truthful summary always lives in the projection.
 
 Before the agent declares the reproduction complete, the close gate must pass: `tools/cli/flow require <run> close` exits 0. The default protocol template ships `exists` checks for `run-report.md`, `consolidated.{jl,py}`, and per-figure `figs/<id>.{png,json}` — so close cannot pass with the deliverables missing. If close fails, repair the evidence or record a deviation; do not stop with an open close gate.
 

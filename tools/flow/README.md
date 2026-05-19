@@ -5,6 +5,7 @@
 The tool is intentionally small:
 
 - `gate` — a checkpoint whose status (`pending` / `passed` / `failed`) is **derived live** from the protocol's `[[checks]]` and the event log. Never stored; never declared.
+- `check` — a typed one-word predicate: `audit`, `run`, `exists`, `agree`, `near`, `fresh`, or `cover`. Check ids are global handles for overrides and cached run results, so `flow` rejects duplicate ids when it parses `protocol.toml`.
 - `attempt` — one actor trying to satisfy one gate. Roles are metadata: `--kind audit`, `--actor agent:source-reviewer`. The `--actor` flag is the human-readable label; the unforgeable identity comes from `FLOW_ACTOR_ID` env when set, or the parent process id (`ppid:<n>`) when it isn't. Different subagent processes get different PPIDs naturally; same agent across calls keeps the same PPID. The `audit` check compares identity, not labels. Audit attempts can attach a `verify_*.md` report; flow hashes its content at finish, so post-finish edits invalidate the audit.
 - `artifact` — a file with a stable content hash, an optional producer attempt, and a `deps` snapshot of any source hashes referenced by `fresh` checks at registration time.
 - `verdict` — a per-claim ✓/⚠/✗ verdict written by an audit subagent into a `verify_*.toml` sidecar next to its markdown report. Flow parses verdicts at `attempt finish` and exposes them via `flow status --json`. Renderers read claim chip status from here, never by grepping prose.
@@ -15,13 +16,26 @@ The tool is intentionally small:
 
 State is append-only. `progress/events.jsonl` is the source of truth (typed Rust enum, JSON-encoded); `progress/state.toml` is the derived projection for humans.
 
-`flow status --json` is the read API for tools (render.py, hooks, dashboards). It emits gates in DAG order with derived status, runnable flag, and per-gate checks; deviations (declared + recorded); decisions; overrides; pending; per-claim verdicts; and the next runnable gate(s). Tools consume this — they never parse events.jsonl directly. `flow status` (text mode) marks the next runnable gate with `▶`.
+`flow status` is terse for humans: current gate, first blocker, and next command. `flow status --full` prints the full gate table with deviations, decisions, overrides, pending obligations, and the next runnable gate marker. `flow status --json` is the read API for tools (render.py, hooks, dashboards). Tools consume this — they never parse events.jsonl directly.
 
 `run`-kind checks are evaluated by `flow attempt finish` (which has side-effect semantics by design) and their results are cached as events. `flow status` is pure: it never executes commands.
 
 Each command takes a local `progress/.lock` while reading, appending, or rebuilding state. This serializes multiple local agents on the same checkout. Subagents and remote jobs should still report back to the main agent instead of writing the event log directly.
 
 Artifact hashes use SHA-256 and are recorded as `sha256:<hex>`. Re-registering an artifact with a different hash naturally invalidates downstream `fresh` checks (their `deps` snapshot no longer matches). There is no separate "invalidate" command — status is always derived.
+
+`cover` checks compare an observed file set to a declared set:
+
+```toml
+[[checks]]
+id = "cells"
+kind = "cover"
+gate = "run"
+pattern = "cells/*/manifest.json"
+paths = ["cells/cell-0001/manifest.json", "cells/cell-0002/manifest.json"]
+```
+
+`pattern` is a simple `*` wildcard over relative paths. Flow walks only the literal directory prefix before the first wildcard and skips symlinked directories. This is intentionally generic: it catches missing, extra, smoke, or orphan artifacts without knowing what the cells mean.
 
 ## Run
 

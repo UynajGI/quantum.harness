@@ -1,5 +1,5 @@
 [flow]
-id = "reproduce_paper"
+id = "reproduce"
 
 [[gates]]
 id = "source"
@@ -17,20 +17,20 @@ id = "script"
 requires = ["plan"]
 
 [[gates]]
-id = "trusted_check"
+id = "trust"
 requires = ["script"]
 
 [[gates]]
-id = "production"
-requires = ["trusted_check"]
+id = "run"
+requires = ["trust"]
 
 [[gates]]
-id = "assembly"
-requires = ["production"]
+id = "assemble"
+requires = ["run"]
 
 [[gates]]
 id = "close"
-requires = ["assembly"]
+requires = ["assemble"]
 
 [[gates]]
 id = "report"

@@ -33,7 +33,7 @@ sources = ["paper"]
 assumption = false
 
 # ─── checks ──────────────────────────────────────────────────────────────────
-# Six generic kinds. Each names what the check does, never what artifact it
+# Seven generic kinds. Each names what the check does, never what artifact it
 # touches:
 #   audit   — an audit-kind attempt with an actor distinct from the producer
 #   run     — execute a shell command; exit 0 = pass
@@ -41,31 +41,44 @@ assumption = false
 #   agree   — declared field values match across artifacts
 #   near    — numeric value within tolerance of a reference
 #   fresh   — artifact and declared sources unchanged since `flow artifact add`
+#   cover   — observed files matching `pattern` exactly equal declared `paths`
 # Paper-specific or skill-specific names belong in the data values (paths,
 # claims, ids) — never in the `kind` field.
+# Check ids are global override handles: keep each id unique in this file.
 # `claims = [...]` on each check is informational metadata for /report's chip
 # resolution; flow itself does not enforce claim coverage.
 # `audience = true` opts a check into the rendered HTML's audience-facing
 # chip strip; default false keeps internal checks out of the deliverable.
 
 [[checks]]
-id = "protocol_audit"
+id = "protocol"
 kind = "audit"
 gate = "protocol"
 audience = true
 claims = ["claim.example"]
 
 [[checks]]
-id = "script_audit"
+id = "script"
 kind = "audit"
 gate = "script"
 audience = true
 claims = ["claim.example"]
 
 [[checks]]
-id = "production_manifests_complete"
+id = "cells"
+kind = "cover"
+gate = "run"
+claims = ["claim.example"]
+pattern = "cells/*/manifest.json"
+paths = [
+  "cells/cell-0001/manifest.json",
+  "cells/cell-0002/manifest.json",
+]
+
+[[checks]]
+id = "fields"
 kind = "exists"
-gate = "production"
+gate = "run"
 claims = ["claim.example"]
 fields = [
   "cells/cell-0001/manifest.json:protocol_hash",
@@ -74,9 +87,9 @@ fields = [
 ]
 
 [[checks]]
-id = "manifest_protocol_consensus"
+id = "hashes"
 kind = "agree"
-gate = "assembly"
+gate = "assemble"
 claims = ["claim.example"]
 against = [
   "cells/cell-0001/manifest.json:protocol_hash",
@@ -84,17 +97,17 @@ against = [
 ]
 
 [[checks]]
-id = "artifacts_fresh"
+id = "fresh"
 kind = "fresh"
-gate = "assembly"
+gate = "assemble"
 claims = ["claim.example"]
 paths = ["figs/fig-example.png"]
 against = ["protocol.toml", "scripts/reproduce.jl"]
 
 [[checks]]
-id = "trusted_reference_compare"
+id = "trust"
 kind = "near"
-gate = "trusted_check"
+gate = "trust"
 audience = true
 claims = ["claim.example"]
 
@@ -105,7 +118,7 @@ claims = ["claim.example"]
   tolerance = { abs = 0.0 }
 
 [[checks]]
-id = "close_audit"
+id = "close"
 kind = "audit"
 gate = "close"
 audience = true
@@ -117,7 +130,7 @@ claims = ["claim.example"]
 # deliverables on disk (the failure mode that motivated this template).
 
 [[checks]]
-id = "close_run_report_exists"
+id = "summary"
 kind = "exists"
 gate = "close"
 audience = true
@@ -125,14 +138,14 @@ claims = ["claim.example"]
 paths = ["run-report.md"]
 
 [[checks]]
-id = "close_consolidated_exists"
+id = "runner"
 kind = "exists"
 gate = "close"
 claims = ["claim.example"]
 paths = ["consolidated.jl"]   # author replaces with consolidated.py for Python runs
 
 [[checks]]
-id = "close_figures_exist"
+id = "figures"
 kind = "exists"
 gate = "close"
 audience = true
@@ -142,7 +155,7 @@ claims = ["claim.example"]
 paths = ["figs/fig-example.png", "figs/fig-example.json"]
 
 [[checks]]
-id = "close_deliverables_fresh"
+id = "final"
 kind = "fresh"
 gate = "close"
 claims = ["claim.example"]
@@ -156,14 +169,14 @@ against = ["protocol.toml"]
 # invalidates the audit chain.
 
 [[checks]]
-id = "report_audit"
+id = "report"
 kind = "audit"
 gate = "report"
 audience = true
 claims = ["claim.example"]
 
 [[checks]]
-id = "editorial_fresh"
+id = "editorial"
 kind = "fresh"
 gate = "report"
 claims = ["claim.example"]
@@ -174,7 +187,7 @@ against = ["protocol.toml"]
 # The command should exit 0 on pass, nonzero on fail. Output is captured but
 # not interpreted — keep machine semantics in the exit code.
 # [[checks]]
-# id = "domain_specific"
+# id = "domain"
 # kind = "run"
 # gate = "script"
 # claims = ["claim.example"]

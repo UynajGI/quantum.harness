@@ -120,7 +120,7 @@ requires = ["revision"]
         template.to_str().unwrap(),
     ]);
 
-    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
+    let status = assert_ok(&["status", run_dir.to_str().unwrap(), "--full"]);
     assert!(status.contains("ideas"));
     assert!(status.contains("pending"));
 
@@ -155,7 +155,7 @@ requires = ["source"]
 
     let copied = fs::read_to_string(run_dir.join("flow.toml")).unwrap();
     assert_eq!(copied, template_text);
-    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
+    let status = assert_ok(&["status", run_dir.to_str().unwrap(), "--full"]);
     assert!(status.contains("copied_template"));
     assert!(status.lines().any(|line| line.starts_with("source\t")));
 }
@@ -197,12 +197,7 @@ requires = ["ideas"]
     let attempt = attempt.trim();
     assert!(attempt.starts_with('a'));
 
-    assert_ok(&[
-        "attempt",
-        "finish",
-        run_dir.to_str().unwrap(),
-        attempt,
-    ]);
+    assert_ok(&["attempt", "finish", run_dir.to_str().unwrap(), attempt]);
 
     assert_ok(&["require", run_dir.to_str().unwrap(), "ideas"]);
     let next = assert_ok(&["next", run_dir.to_str().unwrap()]);
@@ -233,7 +228,7 @@ fn decision_recorded_appears_in_status() {
         "--reason",
         "compute budget",
     ]);
-    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
+    let status = assert_ok(&["status", run_dir.to_str().unwrap(), "--full"]);
     assert!(status.contains("decisions"));
     assert!(status.contains("scope"));
     assert!(status.contains("reduced grid"));
@@ -264,7 +259,7 @@ fn deviation_recorded_appears_in_status() {
         "--reason",
         "TTN not wired",
     ]);
-    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
+    let status = assert_ok(&["status", run_dir.to_str().unwrap(), "--full"]);
     assert!(status.contains("⚠ deviations"));
     assert!(status.contains("backend"));
     assert!(status.contains("MPS instead of TTN"));
@@ -344,7 +339,9 @@ gate = "protocol"
         "--report",
         report.to_str().unwrap(),
     ]);
-    let stdout = String::from_utf8_lossy(&run(&["check", run_dir.to_str().unwrap(), "protocol"]).stdout).to_string();
+    let stdout =
+        String::from_utf8_lossy(&run(&["check", run_dir.to_str().unwrap(), "protocol"]).stdout)
+            .to_string();
     assert!(stdout.contains("self-audit: identity"), "stdout: {stdout}");
 }
 
@@ -663,8 +660,10 @@ gate = "protocol"
         report.to_str().unwrap(),
     ]);
 
-    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
-    assert!(status.lines().any(|line| line.starts_with("protocol\tfailed")));
+    let status = assert_ok(&["status", run_dir.to_str().unwrap(), "--full"]);
+    assert!(status
+        .lines()
+        .any(|line| line.starts_with("protocol\tfailed")));
 }
 
 #[test]
@@ -805,7 +804,10 @@ fn fresh_fails_when_source_content_changes() {
     append(&run_dir.join("protocol.toml"), "\n# appended\n");
     let output = run(&["check", run_dir.to_str().unwrap(), "assembly"]);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    assert!(!output.status.success(), "expected failure; stdout: {stdout}");
+    assert!(
+        !output.status.success(),
+        "expected failure; stdout: {stdout}"
+    );
     assert!(stdout.contains("source changed"), "stdout: {stdout}");
 }
 
@@ -815,7 +817,10 @@ fn fresh_fails_when_artifact_content_changes() {
     write(&fig, "fig content v2 (tampered)\n");
     let output = run(&["check", run_dir.to_str().unwrap(), "assembly"]);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    assert!(!output.status.success(), "expected failure; stdout: {stdout}");
+    assert!(
+        !output.status.success(),
+        "expected failure; stdout: {stdout}"
+    );
     assert!(stdout.contains("artifact mutated"), "stdout: {stdout}");
 }
 
@@ -829,7 +834,10 @@ fn fresh_catches_source_change_despite_forward_touch() {
     Command::new("touch").arg(&fig).output().unwrap();
     let output = run(&["check", run_dir.to_str().unwrap(), "assembly"]);
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    assert!(!output.status.success(), "expected failure; stdout: {stdout}");
+    assert!(
+        !output.status.success(),
+        "expected failure; stdout: {stdout}"
+    );
     assert!(stdout.contains("source changed"), "stdout: {stdout}");
 }
 
@@ -940,12 +948,7 @@ fn audit_detects_report_tampering_after_finish() {
     )
     .to_string();
     run_with_env(
-        &[
-            "attempt",
-            "finish",
-            run_dir.to_str().unwrap(),
-            prod.trim(),
-        ],
+        &["attempt", "finish", run_dir.to_str().unwrap(), prod.trim()],
         &[("FLOW_ACTOR_ID", "producer-id")],
     );
     let report = run_dir.join("verify_source.md");
@@ -1020,7 +1023,7 @@ id = "a"
         "--template",
         template.to_str().unwrap(),
     ]);
-    let status = assert_ok(&["status", run_dir.to_str().unwrap()]);
+    let status = assert_ok(&["status", run_dir.to_str().unwrap(), "--full"]);
     let gates: Vec<&str> = status
         .lines()
         .filter_map(|l| l.split('\t').next())
@@ -1028,13 +1031,234 @@ id = "a"
         .collect();
     assert_eq!(gates, vec!["a", "b", "c"], "status: {status}");
     assert!(
-        status.lines().any(|l| l.starts_with("a\t") && l.contains("▶")),
+        status
+            .lines()
+            .any(|l| l.starts_with("a\t") && l.contains("▶")),
         "▶ should mark gate `a` (first runnable); status: {status}"
     );
     assert!(
-        !status.lines().any(|l| l.starts_with("b\t") && l.contains("▶")),
+        !status
+            .lines()
+            .any(|l| l.starts_with("b\t") && l.contains("▶")),
         "only the first runnable gate gets ▶"
     );
+}
+
+#[test]
+fn status_default_is_terse_and_full_keeps_gate_table() {
+    let root = tmp_dir("status-terse");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(
+        &template,
+        r#"
+[flow]
+id = "terse_demo"
+
+[[gates]]
+id = "source"
+
+[[gates]]
+id = "close"
+requires = ["source"]
+"#,
+    );
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "source_file"
+kind = "exists"
+gate = "source"
+paths = ["source.txt"]
+"#,
+    );
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    let terse = assert_ok(&["status", run_dir.to_str().unwrap()]);
+    assert!(terse.contains("flow terse_demo"), "status: {terse}");
+    assert!(terse.contains("gate source failed"), "status: {terse}");
+    assert!(
+        terse.contains("blocker source_file: missing: source.txt"),
+        "status: {terse}"
+    );
+    assert!(terse.contains("next flow attempt start"), "status: {terse}");
+    assert!(
+        !terse.lines().any(|line| line.starts_with("source\t")),
+        "default status should not print the full gate table: {terse}"
+    );
+
+    let full = assert_ok(&["status", run_dir.to_str().unwrap(), "--full"]);
+    assert!(
+        full.lines().any(|line| line.starts_with("source\tfailed")),
+        "status: {full}"
+    );
+}
+
+#[test]
+fn protocol_rejects_unknown_check_kind_at_parse_time() {
+    let root = tmp_dir("typed-kind");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"source\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "bad"
+kind = "manifest_fields"
+gate = "source"
+"#,
+    );
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    let err = assert_fail(&["check", run_dir.to_str().unwrap(), "source"]);
+    assert!(err.contains("protocol.toml parse error"), "stderr: {err}");
+    assert!(err.contains("manifest_fields"), "stderr: {err}");
+}
+
+#[test]
+fn protocol_rejects_duplicate_check_ids() {
+    let root = tmp_dir("duplicate-check-id");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"source\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "audit"
+kind = "audit"
+gate = "source"
+
+[[checks]]
+id = "audit"
+kind = "exists"
+gate = "source"
+paths = ["artifact.txt"]
+"#,
+    );
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    let err = assert_fail(&["check", run_dir.to_str().unwrap(), "source"]);
+    assert!(err.contains("duplicate check id audit"), "stderr: {err}");
+}
+
+#[test]
+fn cover_check_requires_exact_observed_path_set() {
+    let root = tmp_dir("cover");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    write(&template, "[[gates]]\nid = \"assemble\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "cells"
+kind = "cover"
+gate = "assemble"
+pattern = "cells/*/manifest.json"
+paths = [
+  "cells/cell-a/manifest.json",
+  "cells/cell-b/manifest.json",
+]
+"#,
+    );
+    write(
+        &run_dir.join("cells/cell-a/manifest.json"),
+        "{\"ok\": true}\n",
+    );
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    let missing = run(&["check", run_dir.to_str().unwrap(), "assemble"]);
+    let missing_out = String::from_utf8_lossy(&missing.stdout).to_string();
+    assert!(!missing.status.success(), "stdout: {missing_out}");
+    assert!(
+        missing_out.contains("missing: cells/cell-b/manifest.json"),
+        "stdout: {missing_out}"
+    );
+
+    write(
+        &run_dir.join("cells/cell-b/manifest.json"),
+        "{\"ok\": true}\n",
+    );
+    let pass = assert_ok(&["check", run_dir.to_str().unwrap(), "assemble"]);
+    assert!(pass.contains("2 path(s) covered"), "stdout: {pass}");
+
+    write(
+        &run_dir.join("cells/smoke/manifest.json"),
+        "{\"ok\": true}\n",
+    );
+    let extra = run(&["check", run_dir.to_str().unwrap(), "assemble"]);
+    let extra_out = String::from_utf8_lossy(&extra.stdout).to_string();
+    assert!(!extra.status.success(), "stdout: {extra_out}");
+    assert!(
+        extra_out.contains("extra: cells/smoke/manifest.json"),
+        "stdout: {extra_out}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cover_check_skips_symlinked_directories() {
+    use std::os::unix::fs::symlink;
+
+    let root = tmp_dir("cover-symlink");
+    let template = root.join("template.toml");
+    let run_dir = root.join("run");
+    let external = root.join("external");
+    write(&template, "[[gates]]\nid = \"assemble\"\n");
+    fs::create_dir_all(&run_dir).unwrap();
+    write(
+        &run_dir.join("protocol.toml"),
+        r#"
+[[checks]]
+id = "cells"
+kind = "cover"
+gate = "assemble"
+pattern = "cells/*/manifest.json"
+paths = ["cells/cell-a/manifest.json"]
+"#,
+    );
+    write(
+        &run_dir.join("cells/cell-a/manifest.json"),
+        "{\"ok\": true}\n",
+    );
+    write(&external.join("leak/manifest.json"), "{\"ok\": false}\n");
+    symlink(&external, run_dir.join("cells/link")).unwrap();
+    assert_ok(&[
+        "init",
+        run_dir.to_str().unwrap(),
+        "--template",
+        template.to_str().unwrap(),
+    ]);
+
+    let pass = assert_ok(&["check", run_dir.to_str().unwrap(), "assemble"]);
+    assert!(pass.contains("1 path(s) covered"), "stdout: {pass}");
 }
 
 #[test]
@@ -1090,12 +1314,7 @@ gate = "source"
     )
     .to_string();
     run_with_env(
-        &[
-            "attempt",
-            "finish",
-            run_dir.to_str().unwrap(),
-            prod.trim(),
-        ],
+        &["attempt", "finish", run_dir.to_str().unwrap(), prod.trim()],
         &[("FLOW_ACTOR_ID", "producer")],
     );
 

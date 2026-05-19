@@ -29,6 +29,9 @@ note = ""
 # Only paper/supplement/official-code/official-data sources may support primary
 # claims. KB hints, scripts, and prior artifacts are cached evidence; they
 # require confirmation against a primary source or an explicit assumption.
+# Prefer Markdown source paths for citation and audit. If only a PDF exists,
+# keep the raw PDF under sources/ and extract it to Markdown with
+# tools/skills/download-ref/scripts/render.py --pdf ... --out ...
 
 [[claims]]
 id = "claim.example"
@@ -68,7 +71,7 @@ kind = "exists"
 gate = "source"
 audience = true
 claims = ["claim.example"]
-paths = ["sources/paper.pdf"]
+paths = ["sources/paper.md"]
 
 [[checks]]
 id = "protocol"

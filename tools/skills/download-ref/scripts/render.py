@@ -16,6 +16,7 @@ Manifest schema (web/stub only — arxiv/doi/github are auto-discovered from .ra
 
 Usage:
     render.py --kb /abs/path/.knowledge --manifest manifest.json
+    render.py --pdf paper.pdf --out paper.md
 """
 from __future__ import annotations
 
@@ -143,6 +144,16 @@ def extract_pdf_text(
         except FileNotFoundError:
             pass
     return text.strip()
+
+
+def render_pdf_file(pdf: Path, out: Path, text_only: bool = False) -> None:
+    pdf = pdf.resolve()
+    out = out.resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    text = extract_pdf_text(pdf, kb=out.parent, fig_subdir=out.stem, text_only=text_only)
+    if not text:
+        raise SystemExit(f"no text extracted from {pdf}")
+    out.write_text(text.rstrip() + "\n")
 
 
 def render_arxiv(kb: Path, raw: Path, text_only: bool = False) -> int:
@@ -348,12 +359,24 @@ def render_stubs(kb: Path, manifest: dict) -> int:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--kb", required=True, type=Path)
+    p.add_argument("--kb", type=Path)
     p.add_argument("--manifest", type=Path, default=None,
                    help="Optional JSON manifest for web entries and bib stubs")
+    p.add_argument("--pdf", type=Path,
+                   help="Render one PDF into a Markdown file using the same extraction stack")
+    p.add_argument("--out", type=Path,
+                   help="Output Markdown path for --pdf mode")
     p.add_argument("--text-only", action="store_true",
                    help="Prefer pdftotext and skip image extraction/OCR for faster searchable full text")
     args = p.parse_args()
+    if args.pdf or args.out:
+        if not args.pdf or not args.out:
+            p.error("--pdf and --out must be supplied together")
+        render_pdf_file(args.pdf, args.out, text_only=args.text_only)
+        print(f"pdf: {args.out}")
+        return 0
+    if not args.kb:
+        p.error("--kb is required unless --pdf/--out are supplied")
     raw = args.kb / ".raw"
     m = json.loads(args.manifest.read_text()) if args.manifest else {}
     print(f"arxiv:  {render_arxiv(args.kb, raw, text_only=args.text_only)}")

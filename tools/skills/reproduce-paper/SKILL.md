@@ -31,7 +31,7 @@ Each gate's contract lives in `protocol.toml` as `[[checks]]`. `flow` runs the c
 
 1. **Init the ledger.** `tools/cli/flow init results/<run> --template tools/flow/templates/reproduce-paper.toml`. This is the first run-dir action.
 
-2. **Acquire sources.** Copy `tools/templates/reproduce-paper/protocol.toml` to `results/<run>/protocol.toml`, fill `[artifact]`, `[[sources]]`, and the `source` gate check paths from primary sources, then start a `run` attempt on `source`. Download or locate the primary source files under the declared paths and finish the attempt. `flow require <run> source` must pass before protocol audit.
+2. **Acquire sources.** Copy `tools/templates/reproduce-paper/protocol.toml` to `results/<run>/protocol.toml`, fill `[artifact]`, `[[sources]]`, and the `source` gate check paths from primary sources, then start a `run` attempt on `source`. Use Markdown as the readable source: if an official or rendered Markdown source exists, place it under `sources/` and cite that; if only a PDF exists, store the PDF under `sources/` and render it with `python3 tools/skills/download-ref/scripts/render.py --pdf <pdf> --out <markdown>`. Finish the attempt, then `flow require <run> source` before protocol audit.
 
 3. **Author the contract.** Fill the rest of `protocol.toml` from the primary source: `[entry]`, `[[claims]]`, `[[checks]]`, `[[figures]]`, optional `[[deviations]]` and `[[pending]]`. Use one-word check kinds: `audit`, `run`, `exists`, `agree`, `near`, `fresh`, `cover`, `support`; keep check ids unique because they are override handles. Use attempt roles `audit`, `trial`, `run`, `report`.
 

@@ -104,6 +104,15 @@ Rendering uses `pymupdf4llm` when installed, then falls back to `markitdown` or
 `pdftotext`. If `pymupdf4llm` is missing, full text can still render but figures
 may be absent.
 
+For a single PDF that is already in hand, render it with the same extraction
+stack:
+
+```sh
+python3 "$SCRIPTS/render.py" \
+  --pdf sources/paper.pdf \
+  --out sources/paper.md
+```
+
 For long lecture notes or books where image/OCR extraction is too slow, prefer
 searchable text-only rendering:
 

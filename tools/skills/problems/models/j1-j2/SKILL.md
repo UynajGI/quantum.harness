@@ -13,7 +13,7 @@ Infer setup from the user's prompt and propose for ratification.
 
 **Canonical defaults:** square lattice, S=1/2, J1=1 AFM, J2/J1 from the user's prompt (if not given, ask this one question — it defines the physics entirely). OBC cylinder Ly=4, target E/N + structure factor.
 
-**Proposal pattern:** "Going with: square lattice, S=1/2, J1=1, J2/J1=[value], cylinder Ly=4 Lx=12, target E/N + structure factor. Override any, or pick: small-cluster ED (N≤32), Néel-regime check (J2/J1<0.4), intermediate-regime diagnostic (J2/J1≈0.5 → routes to spin-liquid)."
+**Proposal pattern:** "Going with: square lattice, S=1/2, J1=1, J2/J1=[value], cylinder Ly=4 Lx=12, target E/N + structure factor. Override any, or pick: pending ED small cluster (N≤32), Néel-regime check (J2/J1<0.4), intermediate-regime diagnostic (J2/J1≈0.5 → routes to spin-liquid)."
 
 Build per `knowledge-base/conventions.md`: `H = J1 Σ S_i·S_j + J2 Σ S_i·S_j` (NN+NNN).
 
@@ -30,7 +30,7 @@ Build per `knowledge-base/conventions.md`: `H = J1 Σ S_i·S_j + J2 Σ S_i·S_j`
 
 | Regime | Method | Card |
 |---|---|---|
-| Small cluster (N ≲ 32), exact comparison | ED | `knowledge-base/methods/ed.md` |
+| Small cluster (N ≲ 32), exact comparison | ED pending refreshed references | `knowledge-base/methods/ed.md` |
 | Narrow cylinder (`L_y` ≲ 8) | DMRG | `knowledge-base/methods/dmrg.md` |
 | Imaginary-time route to ground state | TEBD | `knowledge-base/methods/tebd.md` |
 | Wide-cylinder / 2D thermodynamic limit | Beyond current scope. Surface uncertainty; report what cylinder DMRG + ED constrain. | — |
@@ -53,7 +53,7 @@ Default checks:
 - **Symmetry**: total `S^z = 0` for AFM; lattice point group respected.
 - **Convergence**: bond-dim sweep + cylinder-width comparison. For the intermediate regime, document both — the answer often depends on the geometry choice.
 - **Internal consistency**: variance, sub-leading bond-dim corrections.
-- **Cross-method validation** (when feasible) — re-run on a small cluster with an independent method (DMRG ↔ ED on the same cluster), and across cylinder geometries (`L_y` and wrapping). Disagreement on the intermediate regime is a known phenomenon — document, don't average it away. See AGENTS.md "Verification practice".
+- **Cross-method validation** (when feasible) — compare across cylinder geometries (`L_y` and wrapping); use ED only after `knowledge-base/methods/ed.md` is rebuilt. Disagreement on the intermediate regime is a known phenomenon — document, don't average it away. See AGENTS.md "Verification practice".
 
 Optional check:
 

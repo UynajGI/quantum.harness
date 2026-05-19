@@ -88,7 +88,7 @@ Current cards:
 - `symmetry-cheatsheet.md` — conserved quantities, lattice point groups.
 - `magic-conventions.md` — Pauli / clock-shift conventions, SRE definitions, partition modes, qudit generalizations, Wegner-duality SRE preservation.
 - `magic-benchmarks.md` — reference SRE / long-range-magic values across canonical models, reported as literature ranges.
-- `methods/{ed,dmrg,qmc,ctmrg,tebd,vmc-nqs,anderson-impurity-ed,spectral,finite-t,pauli-markov,ttn}.md` — per-algorithm notation, code shape, knobs, pitfalls. `qmc.md` uses Julia SSE/Carlo; `ctmrg.md` uses Julia PEPSKit. `vmc-nqs.md` uses Python/NetKet. `spectral.md` and `finite-t.md` are stubs (pointers only, no tested recipe).
+- `methods/{ed,dmrg,qmc,ctmrg,tebd,vmc-nqs,spectral,finite-t,pauli-markov,ttn}.md` — per-algorithm notation, code shape, knobs, pitfalls. `ed.md` is a blank placeholder pending refreshed references. `qmc.md` uses Julia SSE/Carlo; `ctmrg.md` uses Julia PEPSKit. `vmc-nqs.md` uses Python/NetKet. `spectral.md` and `finite-t.md` are stubs (pointers only, no tested recipe).
 - `literature/<method>/` — rendered methodology references organized by method, each with its own `INDEX.md`. Raw PDFs, Semantic Scholar metadata, and extracted figures live in local-only `.raw/` / `.figures/` subfolders and must remain gitignored.
 - `2302.04919-variational-benchmarks.md` — V-score paper notes.
 
@@ -127,7 +127,7 @@ Default verification, in priority order:
 2. **Symmetry** — conserved quantities respected; expected sector occupied.
 3. **Convergence** — bond-dim / basis-size / Trotter-step / bath-size sweeps that asymptote.
 4. **Internal consistency** — energy variance small relative to E².
-5. **Cross-method validation (when feasible)** — re-run with an independent method (e.g., DMRG + ED on the same small cluster, DMRG + TEBD imaginary-time) and confirm agreement within both methods' accuracy budgets. Disagreement → setup error or insufficient convergence in one method.
+5. **Cross-method validation (when feasible)** — re-run with an independent method (e.g., DMRG + TEBD imaginary-time) and confirm agreement within both methods' accuracy budgets. Use ED only after `knowledge-base/methods/ed.md` is rebuilt. Disagreement → setup error or insufficient convergence in one method.
 6. **Benchmark comparison (when published reference exists)** — `knowledge-base/benchmark-numbers.md`. For contested values, compare against the literature *range*, not a single number.
 
 When the problem is in a frontier regime (frontier flag in the skill), invoke the `arxiv-search` skill before interpretation: a tailored query with `<lattice> <model> <regime>` should return recent literature so the agent's conclusion sits inside the current debate, not outside it.
@@ -257,6 +257,7 @@ ion self --help                          # Manage the Ion install
 
 ### Output norms — users' attention is expensive
 
+- **Remember there is a human on the other side.** Keep interactions precise and concise. Name the concrete paper, file, tool, command, or result before discussing it; do not rely on shorthand, hidden session context, or agent-only labels. Avoid jargon unless it is necessary, and define it when used. Never assume the user has the same context as the agent or any subagent.
 - **Report results in ≤3 lines + a plot.** Primary quantity, verification status, one-line reasoning. Auto-generate the relevant convergence or stability plot with every calculation; this is the visual proof the result is trustworthy. Save the plot and display it. No extra user action needed.
 - **Use `AskUserQuestion` at genuine forks** — pre-action branches and post-result next-steps. Never for pre-flight ratification of clear defaults; never silently at a real fork. Both interrogating clear defaults and silently picking at real forks deny the user the steering wheel. At a real fork, think faithfully like a human: surface 2–3 options with pros / cons and the recommended one (the Superpowers brainstorming pattern in UI form). User clicks, doesn't type. Each option: short label + one-line with pro and con. Recommended option first, labeled "(Recommended)". Example:
   - `"Primary method (Recommended)"` — "Matches the paper's route most closely; uses the declared compute budget."

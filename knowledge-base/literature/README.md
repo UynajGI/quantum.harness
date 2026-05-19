@@ -10,7 +10,6 @@ and `.figures/` directories inside each method folder.
 
 - `dmrg/` - DMRG and matrix-product-state references.
 - `tebd/` - TEBD and tensor-network introductions.
-- `ed-lanczos/` - exact diagonalization and Lanczos references.
 - `vmc-nqs/` - variational Monte Carlo and neural quantum state references.
 - `anderson-impurity/` - Anderson/Kondo impurity solver references.
 - `spectral/` - spectral-function and dynamical-correlation references.

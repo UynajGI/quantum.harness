@@ -28,7 +28,7 @@ Use method slugs that match the local method cards when possible:
 ```text
 dmrg
 tebd
-ed-lanczos
+ed
 vmc-nqs
 anderson-impurity
 spectral

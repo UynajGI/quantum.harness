@@ -30,7 +30,7 @@ Build per `knowledge-base/conventions.md`: `H = -t P(c†c+h.c.)P + J Σ(S·S - 
 
 | Regime | Method | Card |
 |---|---|---|
-| Small cluster, exact reference | Projected ED | `knowledge-base/methods/ed.md` |
+| Small cluster, exact reference | Projected ED pending refreshed references | `knowledge-base/methods/ed.md` |
 | 1D chain, narrow cylinder | DMRG | `knowledge-base/methods/dmrg.md` |
 | Imaginary-time route | TEBD | `knowledge-base/methods/tebd.md` |
 | 2D doped variational (VMC / NQS) | VMC via NetKet for projected wavefunctions. Requires `make install netket`. | `knowledge-base/methods/vmc-nqs.md` |
@@ -53,7 +53,7 @@ Default checks:
 - **Symmetry**: particle counts; `S^z` (and SU(2) when isotropic); lattice symmetries.
 - **Convergence**: bond-dim sweep; cylinder-width comparison for 2D.
 - **Hubbard cross-check**: when `J = 4t²/U` is being claimed, run the corresponding Hubbard at large `U` and compare ground-state energies up to the expected `O((t/U)^4)` correction.
-- **Cross-method validation** (when feasible) — re-run on a small projected cluster with an independent method (projected ED ↔ DMRG). See AGENTS.md "Verification practice".
+- **Cross-method validation** (when feasible) — re-run on a small projected cluster with an independent method; use ED only after `knowledge-base/methods/ed.md` is rebuilt. See AGENTS.md "Verification practice".
 
 Optional check:
 

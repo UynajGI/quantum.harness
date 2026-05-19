@@ -30,7 +30,7 @@ Build per `knowledge-base/conventions.md`. State which Kanamori terms are kept.
 
 | Regime | Method | Card |
 |---|---|---|
-| Single-site / impurity, small `M`, finite bath | ED | `knowledge-base/methods/ed.md` |
+| Single-site / impurity, small `M`, finite bath | ED pending refreshed references | `knowledge-base/methods/ed.md` |
 | Multi-orbital impurity with longer bath chain | DMRG / MPS impurity solver | `knowledge-base/methods/dmrg.md` |
 | Lattice multi-orbital | Out of current scope unless DMFT-embedded; flag explicitly. | — |
 | DMFT impurity solver | Out of current scope to run; note the context. | — |
@@ -52,7 +52,7 @@ Default checks:
 - **Symmetry**: orbital occupancies; total particle count; `S^z` and total `S²` when SU(2) is preserved; rotational invariance check at the local level.
 - **Hilbert space sanity**: confirm the basis size matches the analytic `4^M`-style count.
 - **Convergence**: bond-dim sweep; bath-size sweep for impurity problems.
-- **Cross-method validation** (when feasible) — for multi-orbital impurity problems, re-solve at smaller orbital count or with density-density-only interactions as a sanity check; ED ↔ MPS cross-check on small bath. See AGENTS.md "Verification practice".
+- **Cross-method validation** (when feasible) — re-solve at smaller orbital count or with density-density-only interactions as a sanity check; use ED only after `knowledge-base/methods/ed.md` is rebuilt. See AGENTS.md "Verification practice".
 
 Optional check:
 

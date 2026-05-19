@@ -21,7 +21,7 @@ Re-run the same observable at the same parameter point with an *independent* met
 
   | Primary | Default secondary | Why |
   |---|---|---|
-  | DMRG / MPS at small `L` | ED on the same `L` | Independent algorithm; agreement gates DMRG truncation. |
+  | DMRG / MPS at small `L` | TEBD imaginary-time on the same `L` | Independent ground-state projector; agreement gates DMRG truncation. |
   | TTN sampling | DMRG-MPS perfect-sampling on the same wavefunction (different proposal class) | Independent sampler; agreement gates Markov-chain bias. |
   | DMRG-MPS at moderate `L` | TEBD imaginary-time on the same `L` | Independent ground-state projector. |
   | Pauli-Markov sampling for magic | Deterministic Pauli-basis MPS lift (`methods/pauli-markov.md` runtime variant) | Sampling vs deterministic; orthogonal error budgets. |

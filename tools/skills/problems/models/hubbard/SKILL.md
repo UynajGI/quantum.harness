@@ -30,7 +30,7 @@ Build per `knowledge-base/conventions.md`: `H = -t Σ (c†c + h.c.) + U Σ n↑
 
 | Regime | Method | Card |
 |---|---|---|
-| Small cluster (N ≲ 16 sites) | ED | `knowledge-base/methods/ed.md` |
+| Small cluster (N ≲ 16 sites) | ED pending refreshed references | `knowledge-base/methods/ed.md` |
 | 1D chain, ladder, narrow cylinder | DMRG | `knowledge-base/methods/dmrg.md` |
 | Imaginary-time route to ground state | TEBD | `knowledge-base/methods/tebd.md` |
 | Half-filled bipartite at moderate `U` | AFQMC may be sign-free; recommend only after checking. | — |
@@ -55,7 +55,7 @@ Default checks:
 - **Symmetry**: `(N↑, N↓)` conservation; SU(2) for `H_Hubbard` with no field; particle-hole symmetry at half-filling on bipartite lattices.
 - **Convergence**: bond-dim sweep + cylinder-width when 2D.
 - **Internal consistency**: variance, double-occupancy trend (decreases with `U/t`), spin-spin correlations build up at large `U`.
-- **Cross-method validation** (when feasible) — re-run on a small `(N↑, N↓)` cluster with an independent method (DMRG ↔ ED), and check the U→∞ Heisenberg mapping at large U/t. See AGENTS.md "Verification practice".
+- **Cross-method validation** (when feasible) — check the U→∞ Heisenberg mapping at large U/t; use ED only after `knowledge-base/methods/ed.md` is rebuilt. See AGENTS.md "Verification practice".
 
 Optional check:
 

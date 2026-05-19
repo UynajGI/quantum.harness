@@ -38,7 +38,7 @@ with `X, Z` the qudit shift / clock operators (`X|k⟩ = |k+1 mod q⟩`, `Z|k⟩
 |---|---|---|
 | 1D chain, any `q`, ground-state energy + standard observables | DMRG (qudit MPS) | `knowledge-base/methods/dmrg.md` |
 | 1D chain at large `N` with magic / Pauli-string sampling | TTN | `knowledge-base/methods/ttn.md` |
-| Tiny cluster (`N ≲ 16` for `q = 3`), exact spectrum | ED | `knowledge-base/methods/ed.md` |
+| Tiny cluster (`N ≲ 16` for `q = 3`), exact spectrum | ED pending refreshed references | `knowledge-base/methods/ed.md` |
 | 2D square (small clusters / cylinders) | DMRG cylinder; TTN if PBC torus is needed | `knowledge-base/methods/dmrg.md`, `knowledge-base/methods/ttn.md` |
 | Imaginary-time route to ground state | TEBD | `knowledge-base/methods/tebd.md` |
 
@@ -60,7 +60,7 @@ Default checks (all auto-run; results aggregated into the report's verification 
 - **Symmetry**: `Z_q` symmetry (`Π_i Z_i`) respected; ground state in the trivial sector for finite `L` with no symmetry-breaking field.
 - **Convergence**: bond-dim or basis-size sweep gives a monotonic, asymptoting energy curve. Auto-saved convergence plot per AGENTS.md output norm.
 - **Internal consistency**: energy variance small relative to `E²`.
-- **Cross-method validation (auto-paired at small `N`)** — when the user's `N ≤ 16` for `q = 3` (or `N ≤ 12` for `q = 4`), the harness auto-pairs the primary DMRG / TTN calculation with an ED run at the same instance via `/cross-method-check`. For larger `N`, downscale to a small-`N` cross-check (e.g., `N = 12` for `q = 3`) at the same parameter point. AGENTS.md "Verification practice §5" promoted from "when feasible" to *default whenever feasible*.
+- **Cross-method validation (auto-paired when available)** — use DMRG / TTN cross-checks first. Use ED only after `knowledge-base/methods/ed.md` is rebuilt.
 
 Optional check:
 

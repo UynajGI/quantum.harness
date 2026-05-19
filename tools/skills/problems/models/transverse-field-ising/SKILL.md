@@ -31,7 +31,7 @@ Build per `knowledge-base/conventions.md`: `H = -J Σ σ^z_i σ^z_j - Γ Σ σ^x
 | Regime | Method | Card |
 |---|---|---|
 | 1D chain (any N) | DMRG | `knowledge-base/methods/dmrg.md` |
-| Tiny cluster (N ≲ 24), exact spectrum, debugging | ED | `knowledge-base/methods/ed.md` |
+| Tiny cluster (N ≲ 24), exact spectrum, debugging | ED pending refreshed references | `knowledge-base/methods/ed.md` |
 | Cylinder (square / triangular strips) | DMRG | `knowledge-base/methods/dmrg.md` |
 | Imaginary-time approach | TEBD | `knowledge-base/methods/tebd.md` |
 
@@ -56,7 +56,7 @@ Default checks (all auto-run; results aggregated into the report's verification 
 - **Symmetry**: Z2 (`σ^z → -σ^z`) should be respected; spontaneous breaking shows only with explicit symmetry-breaking field at finite size.
 - **Convergence**: bond-dim sweep gives a monotonic, asymptoting energy curve.
 - **Internal consistency**: energy variance small relative to E².
-- **Cross-method validation (auto-paired at small `N`)** — when the user's `N ≤ 24` for 1D or `L ≤ 4` for 2D, the harness auto-pairs the primary DMRG / TTN calculation with an ED run at the same instance via `/cross-method-check`. Disagreement → setup error or insufficient convergence in one method. For larger `N` the auto-pair downscales to a small-`N` cross-check (e.g., `N = 12` for 1D; `L = 4` for 2D) at the same parameter point. AGENTS.md "Verification practice §5" promoted from "when feasible" to *default whenever feasible*.
+- **Cross-method validation (auto-paired when available)** — use TEBD, DMRG, or TTN cross-checks first. Use ED only after `knowledge-base/methods/ed.md` is rebuilt.
 
 Optional check:
 

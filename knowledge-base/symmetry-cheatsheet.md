@@ -77,7 +77,7 @@ Conserved quantities and lattice generators for common QMB problems. Skills cite
 
 ### ED
 
-Block-diagonalize by quantum numbers. For Heisenberg: fix `S^z_total` (and `S²_total` if SU(2)-symmetric, though that's harder). For Hubbard: fix `(N↑, N↓)`. Block sizes shrink dramatically; e.g., `S^z = 0` sector of N=20 spin-1/2 is `C(20,10) = 184756`, vs full `2^20 = 1M`.
+Pending refreshed references.
 
 ### DMRG
 

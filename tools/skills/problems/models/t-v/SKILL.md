@@ -32,7 +32,7 @@ Build per `knowledge-base/conventions.md`: `H = -t Σ (c†c + h.c.) + V Σ n_i 
 
 | Regime | Method | Card |
 |---|---|---|
-| Small chain or 2D cluster (N ≲ 24) | ED (fixed-`N_f` sector) | `knowledge-base/methods/ed.md` |
+| Small chain or 2D cluster (N ≲ 24) | ED pending refreshed references | `knowledge-base/methods/ed.md` |
 | 1D chain (any N), ladder | DMRG | `knowledge-base/methods/dmrg.md` |
 | Imaginary-time approach | TEBD | `knowledge-base/methods/tebd.md` |
 | Sign-problem-free 2D bipartite cases | QMC may be applicable; check sign condition before recommending. | — |
@@ -53,7 +53,7 @@ Default checks:
 - **Symmetry**: particle number conservation; lattice translation; sublattice exchange (bipartite).
 - **Convergence**: bond-dim or basis-size sweep monotonic and asymptoting.
 - **Internal consistency**: variance, density profile near edges (Friedel oscillations expected for OBC).
-- **Cross-method validation** (when feasible) — re-run a small fixed-`N_f` cluster with an independent method (DMRG ↔ ED), and check sign-problem-free QMC agreement when applicable. See AGENTS.md "Verification practice".
+- **Cross-method validation** (when feasible) — re-run a small fixed-`N_f` cluster with an independent method, and check sign-problem-free QMC agreement when applicable. Use ED only after `knowledge-base/methods/ed.md` is rebuilt. See AGENTS.md "Verification practice".
 
 Optional check:
 

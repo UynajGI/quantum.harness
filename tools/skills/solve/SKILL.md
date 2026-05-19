@@ -60,7 +60,7 @@ Common next-steps (pick the 2–3 most relevant):
 | Visualization (correlations, structure factor, publication figure) | Always after a ground-state calculation. |
 | Parameter scan (U/t sweep, J2/J1 sweep, finite-size extrapolation) | When the user has one data point and the natural next step is a sweep. |
 | Deeper analysis (gap, entanglement, order parameter) | When the ground state is done but the physics question isn't answered. |
-| Cross-method check (DMRG ↔ ED, DMRG ↔ VMC) | When verification is thin or the problem is hard. |
+| Cross-method check (DMRG ↔ TEBD, DMRG ↔ VMC) | When verification is thin or the problem is hard. |
 | Literature context (arxiv-search) | When approaching a frontier regime. |
 | Writeup (declared entry + run report → writing skills) | When the user seems done with computation. |
 | Different problem | When the user pivots. |

@@ -21,7 +21,7 @@ ZLP := zlp
 .PHONY: setup core-setup install-flow test test-flow clean help install $(addprefix install-,$(INSTALLABLE))
 .PHONY: zulip-whoami zulip-pull zulip-send zulip-topics zulip-messages zulip-config
 
-INSTALLABLE := quarto quimb julia julia-ed itensors netket netket-gpu sse pepskit classical-repro
+INSTALLABLE := quarto quimb julia itensors netket netket-gpu sse pepskit classical-repro
 
 help: ## Show available targets and installable tools
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -128,13 +128,6 @@ install-itensors: ## Install ITensors.jl + ITensorMPS.jl + KrylovKit.jl into jul
 	@echo "Julia/ITensors environment ready in julia-env/"
 	@echo "Activate with: julia --project=julia-env"
 
-install-julia-ed: ## Install Julia ED dependencies into julia-env/
-	@command -v julia >/dev/null 2>&1 || { echo "Julia not found. Run: make install julia"; exit 1; }
-	@mkdir -p julia-env
-	@cd julia-env && julia --project=. -e 'using Pkg; Pkg.add(["KrylovKit", "Plots", "JSON"])'
-	@echo "Julia ED environment ready in julia-env/"
-	@echo "Activate with: julia --project=julia-env"
-
 install-netket: ## Install NetKet + JAX for VMC / neural quantum states into .venv
 	@command -v uv >/dev/null 2>&1 || { echo "uv not found. Install uv first: https://docs.astral.sh/uv/getting-started/installation/"; exit 1; }
 	@[ -d .venv ] || uv venv .venv
@@ -163,9 +156,9 @@ install-pepskit: ## Install PEPSKit.jl + TensorKit.jl CTMRG stack into julia-env
 	@echo "Julia PEPSKit/CTMRG environment ready in julia-env/"
 	@echo "Activate with: julia --project=julia-env"
 
-install-classical-repro: ## Install Julia stacks for ED, DMRG, QMC/SSE, and CTMRG reproduction targets
-	@for tool in julia-ed itensors sse pepskit; do $(MAKE) install-$$tool; done
-	@echo "Classical reproduction Julia stacks ready."
+install-classical-repro: ## Install stacks for DMRG, QMC/SSE, and CTMRG reproduction targets
+	@for tool in itensors sse pepskit; do $(MAKE) install-$$tool; done
+	@echo "Classical reproduction stacks ready."
 
 render: ## Render a markdown file to HTML. Usage: make render FILE=<path.md>
 	@if [ -z "$(FILE)" ]; then echo "Usage: make render FILE=<path.md>"; exit 1; fi

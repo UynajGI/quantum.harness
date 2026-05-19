@@ -13,7 +13,7 @@ Infer the canonical setup from the user's prompt and propose it for ratification
 
 **Canonical defaults:** S=1/2, isotropic NN, antiferromagnetic (J > 0), OBC, target E/N. Lattice and system size inferred from the prompt — if only "Heisenberg" is given, default to 1D chain N=20.
 
-**Proposal pattern:** "Going with: 1D chain, S=1/2, J=1 AFM, OBC, N=20, target E/N. Override any, or pick a variant: square lattice (4×4 ED), triangular cylinder (Ly=4), kagome cylinder (Ly=4)."
+**Proposal pattern:** "Going with: 1D chain, S=1/2, J=1 AFM, OBC, N=20, target E/N. Override any, or pick a variant: square lattice (4×4 pending ED), triangular cylinder (Ly=4), kagome cylinder (Ly=4)."
 
 Only surface a real choice when the prompt is genuinely ambiguous about the lattice family. Build the Hamiltonian per `knowledge-base/conventions.md`.
 
@@ -31,7 +31,7 @@ Only surface a real choice when the prompt is genuinely ambiguous about the latt
 | Regime | Method | Card |
 |---|---|---|
 | 1D chain (any N), quasi-1D ladder | DMRG | `knowledge-base/methods/dmrg.md` |
-| Small cluster (N ≲ 24 sites), exact spectrum, debugging | ED | `knowledge-base/methods/ed.md` |
+| Small cluster (N ≲ 24 sites), exact spectrum, debugging | ED pending refreshed references | `knowledge-base/methods/ed.md` |
 | Cylinder (square / triangular / kagome strips, `L_y` small) | DMRG | `knowledge-base/methods/dmrg.md` |
 | Imaginary-time route to ground state, gap probes | TEBD | `knowledge-base/methods/tebd.md` |
 | Frustrated 2D variational (VMC / NQS) | Compare ansatz energies on kagome / triangular. Requires `make install netket`. | `knowledge-base/methods/vmc-nqs.md` |
@@ -58,7 +58,7 @@ Default checks (all auto-run; results aggregated into the report's verification 
 - **Symmetry** — total `S^z` conservation; expected ground-state sector (singlet for finite AFM); lattice point group respected (see `knowledge-base/symmetry-cheatsheet.md`).
 - **Convergence** — bond-dim or basis-size sweep produces a monotonic, asymptoting curve. Report the curve, not just the final value.
 - **Internal consistency** — energy variance is small relative to `E²` at the reported accuracy.
-- **Cross-method validation (auto-paired at small `N`)** — when the user's `N ≤ 20` (1D / quasi-1D) or the cluster has `≤ 16` sites (2D), the harness auto-pairs the primary DMRG calculation with an ED run at the same instance via `/cross-method-check`. For larger `N`, downscale to a small-`N` cross-check (e.g., `N = 12` for 1D) at the same parameter point. AGENTS.md "Verification practice §5" promoted from "when feasible" to *default whenever feasible*.
+- **Cross-method validation (auto-paired when available)** — use TEBD or another active independent route. Use ED only after `knowledge-base/methods/ed.md` is rebuilt.
 
 Optional check (when a published reference exists):
 

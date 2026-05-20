@@ -69,9 +69,16 @@ Setup that affects correctness or uncertainty also belongs in `settings` as opaq
 
 If the caller needs stricter assemble gates, `run_spec.json` may carry `assemble.manifest_contract`, `assemble.consensus_fields`, and `assemble.provenance_fields`. The contract is generic over manifest field paths: required/nonempty fields, equality checks, list membership, numeric fields, optional numeric fields, numeric bounds, and evidence-set bindings. Domain requirements are encoded as payload values in the protocol/run spec and echoed by manifests, not as new `/parameter-scan` types.
 
+<invariants name="assemble">
+- Settings are constant only after manifest consensus. The first completed manifest's settings are not global state; every manifest is validated against the merged shared+cell payload from `run_spec.json`.
+- Provenance is validated per manifest. Each manifest's declared provenance is checked against the run-spec provenance; mismatches surface, not silently merged.
+- Constants vs varying is reported, not assumed. Settings are reported as constant only after they've been checked across all cells; otherwise reported as varying with the per-cell variation surfaced.
+- Failed cells stay surfaced. Each cell tagged failed (or missing manifest) appears in the assembled CSV with its `status` field, never silently dropped or merged with successful cells.
+</invariants>
+
 Assembler obligations:
 
-<checklist name="assemble-contract">
+<checklist name="assemble">
 
 - The assembler validates **every** manifest's `settings` against the merged shared+cell payload from `run_spec.json`.
 - The assembler validates **every** manifest's declared provenance against the run-spec provenance.
@@ -86,7 +93,7 @@ The protocol should pair this with `cover` plus `producer = "run"` so the observ
 
 The skill labels only the shape of the data. Each entry below splits into a **detection criterion** (binary) and a **recommended downstream label/handoff**.
 
-<checklist name="shape-labels">
+<checklist name="shapes">
 
 - **Monotone**
   - Detection: observable goes one direction across an axis range.
@@ -150,11 +157,11 @@ Labels are descriptive, not interpretive. The calling workflow decides what the 
 
 - Hardcoding domain-specific axis ranges or default values.
 
-<example name="anti-hardcode bad">
+<example name="hardcode bad">
 bond_dim_axis = [16, 32, 64, 128]  # baked into the skill
 </example>
 
-<example name="anti-hardcode good">
+<example name="hardcode good">
 # The caller passes the axis range in; this skill never names a bond dim.
 axes = caller.axes  # e.g. {"bond_dim": [16, 32, 64, 128]}
 </example>

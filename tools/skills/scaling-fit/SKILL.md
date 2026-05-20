@@ -49,7 +49,7 @@ This skill MUST NEVER name the physical exponent (ν, γ, c, etc.) or identify a
 
 ## Quality-of-fit interpretation
 
-<checklist name="qof-rules">
+<checklist name="qof">
 
 - `χ²/ν ≈ 1` → fit is consistent with the model.
 - `χ²/ν ≫ 1` → either the fit form is wrong OR uncertainties are under-estimated.
@@ -76,7 +76,42 @@ This skill MUST NEVER name the physical exponent (ν, γ, c, etc.) or identify a
 
 ## Anti-patterns (auto-reject)
 
-- Inventing the physics label (calling the fitted parameter `ν`, `γ`, `c`, etc.).
-- Auto-cycling through fit forms when one form fits poorly — the caller commits to one form per run.
-- Reporting `χ²/ν` without the bootstrap confidence interval.
-- Suppressing visually scattered collapse curves behind a low residual number.
+#### Inventing the physics label
+
+<example name="label bad">
+Fit gives exponent = 0.63 ± 0.02 — this is ν, the Ising-class correlation-length exponent.
+</example>
+
+<example name="label good">
+Fit gives exponent = 0.63 ± 0.02. The calling skill names this against its physics card; this skill stays generic over the physics label.
+</example>
+
+#### Auto-cycling through fit forms
+
+<example name="cycle bad">
+Power-law fit had χ²/ν = 12. Trying log-L instead... still poor. Trying polynomial...
+</example>
+
+<example name="cycle good">
+Power-law fit χ²/ν = 12 (poor). Stopping. The caller committed to power-law for this run; trying a different form is a separate invocation, not a silent fallback.
+</example>
+
+#### Reporting χ²/ν without the bootstrap confidence interval
+
+<example name="qof bad">
+χ²/ν = 0.7. Fit quality is good.
+</example>
+
+<example name="qof good">
+α = 0.51 (95% CI: 0.47–0.56 from N=1000 bootstrap resamples, 23 failed). χ²/ν = 0.7.
+</example>
+
+#### Suppressing visually scattered collapse curves behind a low residual
+
+<example name="collapse bad">
+Collapse residual = 0.04 (low). Universality class consistent.
+</example>
+
+<example name="collapse good">
+Collapse residual = 0.04, but the visual collapse in `scaling-fit.png` is scattered — three sizes diverge at high `h − h_c`. Reported as tentative.
+</example>

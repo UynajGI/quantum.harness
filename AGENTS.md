@@ -88,7 +88,7 @@ Current cards:
 - `symmetry-cheatsheet.md` — conserved quantities, lattice point groups.
 - `magic-conventions.md` — Pauli / clock-shift conventions, SRE definitions, partition modes, qudit generalizations, Wegner-duality SRE preservation.
 - `magic-benchmarks.md` — reference SRE / long-range-magic values across canonical models, reported as literature ranges.
-- `methods/{ed,dmrg,qmc,ctmrg,tebd,vmc-nqs,vqe,spectral,finite-t,pauli-markov,ttn}.md` — per-algorithm notation, code shape, knobs, pitfalls. `ed.md` uses Julia XDiag with QuSpin as a Python fallback reference. `vqe.md` uses TensorCircuit-NG on a preinstalled JAX backend. `qmc.md` uses Julia SSE/Carlo; `ctmrg.md` uses Julia PEPSKit. `vmc-nqs.md` uses Python/NetKet. `spectral.md` and `finite-t.md` are stubs (pointers only, no tested recipe).
+- `methods/<method>.md` — per-algorithm notation, code shape, knobs, pitfalls. `ed/METHOD.md` uses Julia XDiag with QuSpin as a Python fallback reference. `vqe.md` uses TensorCircuit-NG on a preinstalled JAX backend. `qmc.md` uses Julia SSE/Carlo; `ctmrg.md` uses Julia PEPSKit. `vmc-nqs.md` uses Python/NetKet. `spectral.md` and `finite-t.md` are stubs (pointers only, no tested recipe). A method earns a folder `methods/<method>/` (containing `METHOD.md` + `TACITS.toml`) once tacit knowledge has accrued from real runs; before then it stays flat as `methods/<method>.md`.
 - `literature/<method>/` — rendered methodology references organized by method, each with its own `INDEX.md`. Raw PDFs, Semantic Scholar metadata, and extracted figures live in local-only `.raw/` / `.figures/` subfolders and must remain gitignored.
 - `2302.04919-variational-benchmarks.md` — V-score paper notes.
 
@@ -103,6 +103,8 @@ Skills cite these cards; they never hardcode the data. New cards land when a rea
 - DO NOT silently weaken the target. Any change in paper-declared setup, implementation route, data-generation route, constraints, budget, or uncertainty method must be recorded as a deviation before it can support a reproduction claim.
 - Method-agnostic does not mean method-optional. Every executable reproduction cell MUST declare `method`, `stack`, `route`, `source`, `check`, `state`, and `scope`. `route` is one of `paper`, `canonical`, `fallback`, or `deviation`; method and stack names are data values, never `flow` vocabulary. A non-paper / non-canonical / non-fallback stack is a `deviation` before it is a result.
 - Tool availability is not route authority. DO NOT probe, select, or start implementing a fallback stack because the canonical stack has an environment error. First record the canonical route state as failed/pending, then declare `fallback` or `deviation` in the protocol before touching the alternate stack. A fallback stack must be the method card's next recommended stack, not any installed language package.
+- Feature-gap is not route authority. The canonical / fallback stack (XDiag, QuSpin, ITensors, NetKet, …) lacking a built-in basis, constraint, projector, or observable for the target model is NOT a reason to drop to raw NumPy / SciPy / matplotlib. Custom bases belong INSIDE the canonical framework: QuSpin's `user_basis` with a Numba precheck, XDiag's `Spinhalf` with a custom representation, ITensors' custom site type, etc. The harness deliberately rides on canonical frameworks so the result interoperates with the broader research community — that interoperability is the protocol value, not just numerical correctness. Drop the canonical stack only when (a) the customization measurably degrades wall-time by >2× vs a hand-rolled implementation, OR (b) the customization itself is more code than the bare LAPACK/sparse primitives it would replace. Either justification MUST appear as an explicit `[[deviations]]` row before compute, naming the cost or complexity in concrete terms (no hand-waves like "no built-in basis").
+- Audit the active stack at protocol-author time. The script's actual imports MUST match the protocol's declared `stack` field on every cell. Importing `quspin` only as a route-check (`python -c 'import quspin'`) while the compute uses raw `scipy.linalg.eigh` is a silent drift — file a deviation immediately or rewrite the script to use QuSpin in fact, not in label.
 - `flow` is a ledger, not a method or software selector. DO NOT use `flow` gates, attempt roles, or check kinds to choose or rename the scientific stack.
 - DO NOT use first-cell provenance. Per-cell run-spec overrides are allowed, but assembly must validate each manifest against the merged shared+cell settings and provenance, then report settings as constant vs varying. Never summarize a correctness-affecting setting, budget, or uncertainty rule from the first completed manifest unless a manifest-consensus check has proved it is global.
 - Failed checks block claims. A failed protocol, script, command, manifest, freshness, consensus, numeric, or result check stops the workflow until repaired, scoped down, or recorded as a justified assumption/deviation.
@@ -114,6 +116,31 @@ Skills cite these cards; they never hardcode the data. New cards land when a rea
 - Stale artifacts or artifacts missing required provenance cannot support conclusions. Remote job status, `ssh` exit status, and scheduler `COMPLETED` state are operational facts only; fetched manifests and checks are the evidence.
 
 **Provenance discipline.** Every numerical anchor on a KB card must carry one of three tags: *Literal* (a verbatim passage from a rendered literature file under `knowledge-base/literature/<method>/`, with line number), *Analytic* (closed-form derivation from a stated definition or limit), or *Harness anchor* (verified empirical value from a tagged run in this repo, with a cross-check method named). Untagged numerical entries are not benchmarks. The `/verify` primitive (in `kb-card` mode) cross-checks each tag against its declared source — invoke it during `/reproduce-paper` before compute, and as a pre-commit gate after editing a KB card.
+
+**Tacit knowledge usage.** Methods and models accumulate a `TACITS.toml` file beside their card when real runs surface signal-understanding-action lessons (path: `knowledge-base/methods/<method>/TACITS.toml`, or the model-equivalent once that namespace lands). Each entry is one `[[tacit]]` table with `signal` (surface symptom), `understanding` (root cause), `action` (concrete fix), `tags`, and `seen_at` (run dir). Three binding usage rules:
+
+1. **Main agent: grep on uncertainty.** When unclear about an error message, a fragile stack edge, or a planning choice involving a method or model, grep `^signal` in every relevant `TACITS.toml` before exploring blindly. Reading only the signal lines keeps context light; drill into a specific `[[tacit]]` block only when its signal matches.
+2. **Every audit subagent: grep before issuing a verdict.** The dispatching skill (`/verify`, audit-kind attempts inside `/reproduce-paper`, etc.) MUST instruct the subagent to grep `TACITS.toml` for every method and model under audit. The instruction names the protocol's declared methods and models; the subagent identifies the matching `TACITS.toml` files (not hardcoded paths from the dispatcher). A verdict that ignores a tacit whose signal matches the audited artifact is itself a failed audit.
+3. **Debug / change requests: grep before editing.** When a human or another subagent asks for a change, fix, or investigation involving a method or model, grep the relevant `TACITS.toml` files first. Many "bugs" are known tacits with a recorded action; spending compute re-discovering them is exactly the waste this file exists to prevent.
+
+When a tacit is discovered in a real run, the run's close attempt or the next protocol-author should add it as a `[[tacit]]` entry in the right scope's `TACITS.toml`, with `seen_at` pointing to the originating run dir. The tacit knowledge accumulates — that's the point.
+
+**Pre-compute figure-reading checklist.** Reproducing a paper figure without first reading its caption verbatim and matching every plotted quantity to a paper-stated definition is the single biggest waste of computational budget in this harness. Both the main agent AND every audit subagent MUST work through this checklist BEFORE writing or approving any cell script or assembly code that contributes to a figure. A verifier report that says "math looks right" without quoting the caption text and matching each plotted quantity to a paper-stated definition is NOT acceptable evidence — the audit subagent that misses a wrong y-axis label is as culpable as the main agent that wrote it.
+
+For each figure panel:
+
+1. **Caption verbatim.** Quote the paper's caption text for the panel into the protocol's `[[figures]]` entry. Not paraphrased — verbatim. Subsequent steps refer to this exact text, not to a summary.
+2. **x-axis.** Identify the variable name, units, range, and scale (linear / log). The printed axis label on the figure image is the source of truth; the body text may name the variable but not its scale or normalization.
+3. **y-axis.** Identify the variable name, units, range, scale, AND any normalization factor (× L, × N, divided by D, log₂ vs log₁₀, etc.). A missing or extra normalization factor is the most common silent error and is invisible from numerical values alone — it must be read off the printed axis label.
+4. **Per-curve identity.** For every line / marker / color in the panel: which state(s)? which subset of states? which sector? which observable? Match each to a single concrete object in code, named the same way the caption names it.
+5. **State-selection language is a contract.** Phrases like "state in the special band adjacent to E = 0", "lowest |E|>0 eigenstate", "middle of the band", "ground state in the symmetry sector", and "exact zero mode" each select a DIFFERENT specific state. Treat them as distinct contracts. Write down which exact eigenstate the caption picks, in code-precise terms, BEFORE picking it in code.
+6. **Window / sub-region.** Captions like "averaged over the middle 2/3 of the band", "i ∈ [D/5, D/2 − 500]", "excluding zero modes" define the data subset. Encode the window precisely; off-by-one and misread bounds silently change results.
+7. **Stated numerical anchors.** If the body text quotes a number for the panel ("ΔE/E ≈ 1%", "peak at n = L/2", "tower spacing 2Ω"), record it as a benchmark. Code output must reproduce each anchor within reported uncertainty before any further claim is considered settled.
+8. **What the figure is NOT.** Captions often distinguish closely-related states ("ground state" vs "first special state above zero" vs "exact zero mode"). Note explicitly which related-but-distinct states the panel does NOT plot, so the code does not accidentally pick one of them.
+
+This checklist applies to figure-producing cell scripts AND to assembly / plot code. A wrong y-axis label or a wrong state pick in `assemble.py` wastes the same compute as a wrong cell script — the figure is re-rendered from wrong-but-correctly-stored data, but the user-facing result is still wrong. `/verify` in `script` and `result` modes MUST mechanically work through each item against the protocol and the actual script before issuing a `pass` verdict.
+
+Wasted-compute lesson on record: in the Turner 2018 reproduction, Fig 3(c) was first composed against `|⟨n|ψ⟩|²` instead of `|⟨n|ψ⟩|² L` (missed the L factor in the printed y-axis label) AND picked the highest-overlap exact zero mode instead of the lowest-|E|>0 special state ("adjacent to E = 0" was misread as "AT E = 0"). The fix required re-running L = 12, 14, 16, 18, 20, 22, 24, 26, 28 cells. Both errors were directly visible in the paper's printed caption and figure if the checklist had been worked through before compute.
 
 ## Skill shapes
 
@@ -132,7 +159,7 @@ Default verification, in priority order:
 2. **Symmetry** — conserved quantities respected; expected sector occupied.
 3. **Convergence** — bond-dim / basis-size / Trotter-step / bath-size sweeps that asymptote.
 4. **Internal consistency** — energy variance small relative to E².
-5. **Cross-method validation (when feasible)** — re-run with an independent method (e.g., DMRG + TEBD imaginary-time) and confirm agreement within both methods' accuracy budgets. Use ED only after `knowledge-base/methods/ed.md` is rebuilt. Disagreement → setup error or insufficient convergence in one method.
+5. **Cross-method validation (when feasible)** — re-run with an independent method (e.g., DMRG + TEBD imaginary-time) and confirm agreement within both methods' accuracy budgets. Use ED only after `knowledge-base/methods/ed/METHOD.md` is rebuilt. Disagreement → setup error or insufficient convergence in one method.
 6. **Benchmark comparison (when published reference exists)** — `knowledge-base/benchmark-numbers.md`. For contested values, compare against the literature *range*, not a single number.
 
 When the problem is in a frontier regime (frontier flag in the skill), invoke the `arxiv-search` skill before interpretation: a tailored query with `<lattice> <model> <regime>` should return recent literature so the agent's conclusion sits inside the current debate, not outside it.
@@ -171,6 +198,21 @@ Do not preemptively scaffold these. When a real problem creates the demand, add 
 Default stack: **Julia + ITensors.jl** (ITensors.jl, ITensorMPS.jl, MPSKit.jl, KrylovKit.jl). Install via `make install julia && make install itensors`. Method cards in `knowledge-base/methods/` use this stack for canonical code shapes.
 
 Python (`quimb` + `cotengra`) remains available as a fallback for tensor-network sketches via `make install quimb`. Skills can route to either when both work; method cards are Julia-flavored.
+
+## Compute resources
+
+The harness has a remote cluster (`tools/cluster/active.md` → currently `hpc2.md`) for any task larger than a few minutes of local compute. **Compute feasibility is decided BEFORE the first run**, not discovered after watching a local process for an hour.
+
+Before launching any non-trivial computation:
+
+1. **Estimate the cost up front.** For dense ED: D² × 8 bytes is the matrix memory; wall ≈ O(D³) / aggregate-GFLOPS. For DMRG: χ² × L × 8 bytes is the MPS, wall ≈ #sweeps × (D × χ³). For QMC / Pauli-Markov: per-MCS cost × n_MCS × n_chains.
+2. **Pick local vs remote with a clear threshold:**
+   - Local: < 10 min wall, < 16 GB resident, fits within normal use of one CPU node.
+   - Remote sbatch: everything else.
+3. **Read the cluster card BEFORE picking a partition.** `tools/cluster/<active>.md` lists partition memory / core / wall caps and recent usage notes. The default partition is a hint, not authority — an idle partition that matches needs beats a contested default. Concrete example: the Turner 2018 reproduction had L=30 dense ED take ~50 min locally vs ~10 min on a 64-core cluster node, and L=32 was infeasible locally entirely. That asymmetry should be caught BEFORE the first local run.
+4. **Compose with `/slurm`** (single-job or array) and `/parameter-scan` (multi-axis grids). The cluster mechanism handles ship-code → submit → monitor → fetch end-to-end.
+
+NEVER run a multi-hour calculation locally because the agent forgot the cluster exists. The cluster IS the default for non-trivial compute; declare a deviation if local-only is actually justified.
 
 ## Installed Skills
 
@@ -275,9 +317,9 @@ ion self --help                          # Manage the Ion install
 - **Long iterative computes must emit intermediate estimates, not just final values.** A multi-hour run without progress output is a blind spot: the user cannot sanity-check whether the running estimate, error proxy, acceptance/progress counters, or convergence diagnostics are stabilizing. Print a partial estimate every K steps, where K is chosen so the user sees roughly 10-50 updates over the run. The script's standard runner enforces this via a `progress_every` knob; method cards declare a sensible default.
 - **Monitor before declaring success — don't fire-and-forget remote actions.** A "RUNNING" status / a 0 exit code from `ssh` is not success; only verified output is. After any non-trivial remote action, stay engaged through a *settle-time* before reporting "✓ done":
   - **Lightweight tasks** (env setup, install, instantiate, single ssh command): tail output in real-time. If silent for >30 sec on a non-precompile command, suspect (PATH issue, hung lock, missing prereq).
-  - **Sbatch grid submission**: 1–3 min settle-time. `squeue` "RUNNING" alone is not success — tail at least one cell's log to confirm real compute progress or manifest writes are happening. Catches early failures (PATH issues, wrong binary, missing modules, OOM-at-startup) before they multiply across the grid.
-  - **Multi-hour jobs**: periodic log checks (every 30–60 min). Surface progress to the user via short status lines, not silence.
-  Settle-time scales with how far the job has to go before producing meaningful output. The cost of an extra 1–3 min of monitoring is much less than the cost of returning hours later to find 28 cells silently failed in the first minute.
+  - **Cluster jobs**: cluster-specific settle-time discipline (partition selection from queue card, `PD → R` transition check, first-cell log tail, multi-hour periodic checks) lives in `tools/skills/slurm/SKILL.md`. Compose with `/slurm` instead of inlining the rules here.
+  - **Multi-hour local jobs**: periodic log checks every 30–60 min. Surface progress via short status lines, not silence.
+  Settle-time scales with how far the job has to go before producing meaningful output. The cost of an extra 1–3 min of monitoring is much less than the cost of returning hours later to find 28 cells silently failed in the first minute — or that all 28 cells are still queued.
 - **Caveat-after, not caveat-first.** For contested regimes, state the consensus framing first, then qualify the unresolved point. Never open with the hedge.
 - **One question at a time** when questions are needed; prefer `AskUserQuestion` with options over open-ended text.
 - **Keep prose output under 10 lines.** `AskUserQuestion` options are rendered as buttons — they don't count toward this limit. If more prose is needed, ask before continuing.

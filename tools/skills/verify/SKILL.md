@@ -83,15 +83,19 @@ Compare the script against the protocol and the cited methodology section.
 
 1. **Claim coverage** — script produces evidence for every assigned claim.
 2. **Route match** — imports, commands, entrypoints, manifests, and generated artifacts match each declared cell's `method`, `stack`, `route`, `source`, `check`, `state`, and `scope`.
-3. **Deviation honesty** — every difference from the paper, method card, selected stack, or route check is recorded as a deviation.
-4. **Manifest provenance** — script writes the fields required by `exists`/`agree`/`fresh`/`support` checks and registers evidence artifacts with the producer role required by the protocol.
-5. **Regime support** — budgets and knobs are sufficient for the declared checks, not just plausible-looking numbers.
+3. **Stack-claim match** — the script's actual imports and library calls match the declared `stack`. A `stack = "quspin"` cell whose compute uses raw `scipy.linalg.eigh` is a silent drift, not a passing audit.
+4. **Deviation honesty** — every difference from the paper, method card, selected stack, or route check is recorded as a deviation.
+5. **Manifest provenance** — script writes the fields required by `exists`/`agree`/`fresh`/`support` checks and registers evidence artifacts with the producer role required by the protocol.
+6. **Regime support** — budgets and knobs are sufficient for the declared checks, not just plausible-looking numbers.
+7. **Figure-reading checklist** — for any script that contributes to a figure (cell runner OR assembly code): work through the AGENTS.md pre-compute figure-reading checklist against the paper caption: caption verbatim, x-axis + scale, y-axis + normalization factor (× L, divided by D, log₂ vs log₁₀, …), per-curve identity, state-selection language as a contract, window / sub-region, stated numerical anchors, and what the figure is NOT. Quote the caption text and match each plotted quantity to a paper-stated definition. "Math looks right" is not a verdict.
 
-Severity tags: `match`, `proxy`, `route-mismatch`, `unrecorded-deviation`, `provenance-gap`, `regime-gap`.
+Severity tags: `match`, `proxy`, `route-mismatch`, `stack-drift`, `unrecorded-deviation`, `provenance-gap`, `regime-gap`, `caption-misread`, `axis-mismatch`, `state-mismatch`, `window-mismatch`.
 
 ### `result`
 
 For each numerical claim: ✓ within paper's error bar, ⚠ outside paper but within convergence margin, ✗ disagrees. Confirm each result artifact is `current_run` evidence with matching hashes and manifest route fields matching the protocol cell.
+
+For each figure produced: re-work the AGENTS.md pre-compute figure-reading checklist against the assembled image and the paper caption. Off-by-an-L-factor, wrong-state-pick, and wrong-window are common silent failures invisible from the numbers alone; the audit must catch them visually and from the script.
 
 ### `mismatch`
 

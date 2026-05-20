@@ -17,6 +17,7 @@ Thin orchestrator. The discipline lives in `protocol.toml`: `[[cells]]` declares
 - DO NOT silently weaken the target. Any change to paper setup, route, data, budget, scope, or uncertainty is a `[[deviations]]` row before compute.
 - DO NOT trust the first manifest as global. Assemble from all manifests; report settings as constant only after consensus.
 - Failed gates are not status text. Classify the mismatch, repair the earliest wrong layer, invalidate downstream artifacts, rerun, then re-verify.
+- READ EVERY FIGURE CAPTION VERBATIM BEFORE CODING. The pre-compute figure-reading checklist (AGENTS.md → Knowledge Base Role → "Pre-compute figure-reading checklist") is binding for every `[[figures]]` entry: caption verbatim, x-axis + scale, y-axis + normalization factor (× L, divided by D, log₂ vs log₁₀, …), per-curve identity, state-selection language as a contract, window / sub-region, stated numerical anchors, and what the figure is NOT. Audit subagents in `script` and `result` modes MUST work through it; "math looks right" is not a verdict.
 
 ## When to activate
 
@@ -85,7 +86,7 @@ figures = ["fig1a"]
 method = "ed"
 stack = "xdiag"
 route = "canonical"  # paper | canonical | fallback | deviation
-source = "knowledge-base/methods/ed.md"
+source = "knowledge-base/methods/ed/METHOD.md"
 check = "julia --project=julia-env -e 'using XDiag'"
 state = "passed"     # passed | failed | skipped
 scope = "full"       # full | partial | sketch

@@ -1,0 +1,32 @@
+name: Challenge idea
+description: Suggest a challenge issue that may lead to research output.
+title: "[challenge]: "
+labels: ["challenge"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please post a well-posed issue that may potentially lead to a research output.
+
+        Include a contact email for follow-up. Issue contents are public on GitHub.
+
+  - type: input
+    id: contact_email
+    attributes:
+      label: Contact email
+      description: Required so organizers can follow up about the proposed challenge.
+      placeholder: "name@example.edu"
+    validations:
+      required: true
+
+  - type: textarea
+    id: challenge_issue
+    attributes:
+      label: Challenge issue
+      description: State the issue and why it may potentially lead to research output.
+      placeholder: |
+        What is the issue?
+        Why might it lead to research output?
+        References, code, data, or context if useful.
+    validations:
+      required: true

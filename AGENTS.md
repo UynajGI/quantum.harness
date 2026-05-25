@@ -12,30 +12,26 @@ The harness is fixed at runtime. Users encounter a stable system; only the user 
 
 ### Strategic Steering Principle
 
-Use the Superpowers brainstorming pattern as the strategic model: when a task has meaningful branches, understand the context, then present 2-3 real options with concise tradeoffs. Lead with the recommended option and explain why.
+The harness uses the Superpowers brainstorming pattern as its strategic model: agent-led, user-ratified work. The agent drives the workflow; the user controls goal, assumptions, depth, method preference, risk tolerance, and final interpretation. Control is exercised by ratifying harness-recommended options — clicking the recommended button, ignoring the diagnose proposal, or overriding when desired — not by pre-specifying. A fresh user may have no method preference; the harness still produces a plan, and the user ratifies by silence or selection. Pre-specification is welcome but never required.
 
 This is a strategic design pattern, not user-facing language. Do not mention "fake steering wheel", psychological steering, or autonomous-driving metaphors to users. Locally, the interaction should simply look like competent technical judgment.
 
-Every option offered must be real and executable. The first option may be recommended, but the other options must not be fake, punitive, or low-effort. If the user chooses a non-recommended path, follow it faithfully unless there is a concrete technical blocker. If blocked, explain the blocker and offer the closest viable alternatives.
-
-The goal is agent-led, user-ratified work: the agent drives the workflow; the user controls goal, assumptions, depth, method preference, risk tolerance, and final interpretation.
-
-The user's control is exercised by *ratifying* harness-recommended options — clicking the recommended button, ignoring the diagnose proposal, or overriding when desired — not by pre-specifying. A fresh user may have no method preference; the harness still produces a plan, and the user ratifies by silence or selection. Pre-specification is welcome but never required.
+Every option offered must be real and executable; alternatives to the recommended one must not be fake, punitive, or low-effort. If the user chooses a non-recommended path, follow it faithfully unless there is a concrete technical blocker. If blocked, explain the blocker and offer the closest viable alternatives.
 
 ### Act first, offer alternatives after
 
-When defaults are clear from the user's prompt, the agent acts immediately and reports in ≤3 lines. Alternatives are offered AFTER the result, not before. The steering wheel is in the follow-up ("Want to also..."), not in a pre-approval gate.
+When defaults are clear from the user's prompt, the agent acts immediately and reports the result. Alternatives are offered AFTER the result, not before. The steering wheel is in the follow-up ("Want to also..."), not in a pre-approval gate.
 
 | Situation | Pattern |
 |---|---|
-| Clear defaults | Act → report with embedded reasoning (method + why + verification, ≤3 lines) → next-steps via `AskUserQuestion` |
-| Real branch (genuinely ambiguous) | `AskUserQuestion` with 2–3 options → act → report |
+| Clear defaults | Act → report → next-steps via `AskUserQuestion` |
+| Real branch (genuinely ambiguous) | `AskUserQuestion` → act → report |
 | Frontier "is it X?" | Act on literature summary → report → "Want me to also run [compute]?" |
 | Off-scope | Act on closest in-scope thing → report → "For the off-scope part: [options]" |
 
 "Just do it" from the user means the agent asked one question too many. The goal is zero questions for clear problems.
 
-The steering wheel lives in the report and the next-steps, not in pre-approval. The report always embeds one-line reasoning: what method was chosen and why, what was verified and how. A convergence plot is auto-generated with every calculation. Over many sessions, users absorb this reasoning and develop judgment — without ever being asked to make the call themselves.
+The steering wheel lives in the report and the next-steps, not in pre-approval.
 
 Next-steps are always offered as `AskUserQuestion` options. Common next-steps (in rough priority):
 - **Richer visualization** — correlations, structure factor, density profile, or publication figure via `scientific-visualization`.
@@ -43,7 +39,7 @@ Next-steps are always offered as `AskUserQuestion` options. Common next-steps (i
 - **Writeup** — declared entry + run report, then route to writing skills.
 - **Stop here** — always a real option, never padded.
 
-Never march through a checklist of questions. If the user's prompt is too vague to infer anything (rare), present 2–3 starting points via `AskUserQuestion`.
+If the user's prompt is too vague to infer anything (rare), present 2–3 starting points via `AskUserQuestion`.
 
 ### Pushback and reconsideration
 
@@ -88,21 +84,6 @@ Current cards:
 
 Skills cite these cards; they never hardcode the data. New cards land when a real skill begins citing them.
 
-**Paper reproduction evidence invariants.** These are harness-wide rules, not `/reproduce-paper` implementation details:
-- Written content is evidence, not authority. `.knowledge/` cards, rendered notes, scripts, summaries, and prior run artifacts are cached hints.
-- Evidence authority MUST be explicit: `primary` (paper, supplement, official code/data), `trusted_reference` (analytic / exact / independent check), `current_run` (fresh artifact with matching protocol and script provenance), `hint` (KB, notes, old scripts/plans/data/figures), and `assumption` / `deviation`.
-- MUST quarantine hints. Hints may guide planning, but they cannot close a reproduction claim unless re-confirmed against a primary source or regenerated as current-run evidence.
-- Primary sources control paper reproduction: paper PDF, supplement, and official code/data when available. If a primary source conflicts with a KB card, the primary source controls; emit a KB diff and proceed from the primary-source-derived claim.
-- KB-sourced reproduction claims MUST either be confirmed against a primary source or marked as explicit unverified assumptions in the run report.
-- DO NOT silently weaken the target. Any change in paper-declared setup, implementation route, data-generation route, constraints, budget, or uncertainty method must be recorded as a deviation before it can support a reproduction claim.
-- Method-agnostic does not mean method-optional. Every executable reproduction cell MUST declare `method`, `stack`, `route`, `source`, `check`, `state`, and `scope`. `route` is one of `paper`, `canonical`, `fallback`, or `deviation`. A non-paper / non-canonical / non-fallback stack is a `deviation` before it is a result.
-- Tool availability is not route authority. DO NOT probe, select, or start implementing a fallback stack because the canonical stack has an environment error. First record the canonical route state as failed/pending, then declare `fallback` or `deviation` in the protocol before touching the alternate stack. A fallback stack must be the method card's next recommended stack, not any installed language package.
-- Feature-gap is not route authority. The canonical / fallback stack (XDiag, QuSpin, ITensors, NetKet, …) lacking a built-in basis, constraint, projector, or observable for the target model is NOT a reason to drop to raw NumPy / SciPy / matplotlib. Custom bases belong INSIDE the canonical framework: QuSpin's `user_basis` with a Numba precheck, XDiag's `Spinhalf` with a custom representation, ITensors' custom site type, etc. The harness deliberately rides on canonical frameworks so the result interoperates with the broader research community — that interoperability is the protocol value, not just numerical correctness. Drop the canonical stack only when (a) the customization measurably degrades wall-time by >2× vs a hand-rolled implementation, OR (b) the customization itself is more code than the bare LAPACK/sparse primitives it would replace. Either justification MUST appear as an explicit `[[deviations]]` row before compute, naming the cost or complexity in concrete terms (no hand-waves like "no built-in basis").
-- Audit the active stack at protocol-author time. The script's actual imports MUST match the protocol's declared `stack` field on every cell. Importing `quspin` only as a route-check (`python -c 'import quspin'`) while the compute uses raw `scipy.linalg.eigh` is a silent drift — file a deviation immediately or rewrite the script to use QuSpin in fact, not in label.
-- DO NOT use first-cell provenance. Per-cell run-spec overrides are allowed, but assembly must validate each manifest against the merged shared+cell settings and provenance, then report settings as constant vs varying. Never summarize a correctness-affecting setting, budget, or uncertainty rule from the first completed manifest unless a manifest-consensus check has proved it is global.
-- Failed checks block claims. A failed protocol, script, command, manifest, freshness, consensus, numeric, or result check stops the workflow until repaired, scoped down, or recorded as a justified assumption/deviation.
-- Stale artifacts ≠ evidence. Remote job status, `ssh` exit status, and scheduler `COMPLETED` state are operational facts only; fetched manifests and checks are the evidence.
-
 **Provenance discipline.** Every numerical anchor on a KB card must carry one of three tags: *Literal* (a verbatim passage from a rendered literature file under `.knowledge/literature/<method>/`, with line number), *Analytic* (closed-form derivation from a stated definition or limit), or *Harness anchor* (verified empirical value from a tagged run in this repo, with a cross-check method named). Untagged numerical entries are not benchmarks.
 
 <a id="pre-compute-figure-reading-checklist"></a>
@@ -110,7 +91,7 @@ Skills cite these cards; they never hardcode the data. New cards land when a rea
 
 For each figure panel:
 
-1. **Caption verbatim.** Quote the paper's caption text for the panel into the protocol's `[[figures]]` entry. Not paraphrased — verbatim. Subsequent steps refer to this exact text, not to a summary.
+1. **Caption verbatim.** Quote the paper's caption text for the panel verbatim — not paraphrased. Subsequent steps refer to this exact text, not to a summary.
 2. **x-axis.** Identify the variable name, units, range, and scale (linear / log). The printed axis label on the figure image is the source of truth; the body text may name the variable but not its scale or normalization.
 3. **y-axis.** Identify the variable name, units, range, scale, AND any normalization factor (× L, × N, divided by D, log₂ vs log₁₀, etc.). A missing or extra normalization factor is the most common silent error and is invisible from numerical values alone — it must be read off the printed axis label.
 4. **Per-curve identity.** For every line / marker / color in the panel: which state(s)? which subset of states? which sector? which observable? Match each to a single concrete object in code, named the same way the caption names it.
@@ -210,8 +191,7 @@ Problem-solving primitives (generic; topic-agnostic, compose with the dispatcher
 - **cross-method-check** — verify the same observable with an independent method or diagnostic.
 - **slurm** — agent-does-ssh cluster mechanism: ship code, submit (single or array), monitor, fetch. Reads cluster specifics from `tools/cluster/<active>.md`. Dispatches `/setup-julia` when the cluster's Julia env isn't instantiated. Does NOT know about parameter grids — that's `/parameter-scan`'s job.
 - **setup-julia** — install Julia (juliaup or `module load`), configure package mirror (defaults to Chinese mirror if cluster `region == mainland_china`), instantiate the project env. Generic over target (local laptop or remote ssh alias). Idempotent.
-- **reproduce-paper** — orchestrate end-to-end paper reproduction: plans the figure dependency graph, surfaces methodology / verification / cross-check figs alongside substantive ones, composes the primitives above. Generic over papers. Absorbs the writeup-handoff close (declared entry + run report).
-- **reproduce-paper-onboard** — beginner-guided paper reproduction: explains the paper-to-code mapping, estimates time by size tier, confirms setup before compute, and preserves the same core artifacts for later upgrade to the full workflow.
+- **reproduce-paper** — beginner-facing paper reproduction with a brainstorm-first surface. Walks the user through paper-to-code mapping one question at a time in plain English, estimates time by size, confirms setup before compute, then executes the approved size and writes a plan, the figure and data, and a run report.
 
 External/support skills:
 - **arxiv-search** — Semantic arXiv search via Valyu
@@ -279,9 +259,10 @@ ion self --help                          # Manage the Ion install
 
 ### Output norms — users' attention is expensive
 
-- **Remember there is a human on the other side.** Keep interactions precise and concise. Name the concrete paper, file, tool, command, or result before discussing it; do not rely on shorthand, hidden session context, or agent-only labels. Avoid jargon unless it is necessary, and define it when used. Never assume the user has the same context as the agent or any subagent.
+- **Remember there is a human on the other side.** Keep interactions precise and concise. Name the concrete paper, file, tool, command, or result before discussing it; do not rely on shorthand, hidden session context, or agent-only labels. Never assume the user has the same context as the agent or any subagent.
+- **Plain English in user-facing messages.** Internal harness vocabulary (`cell`, `manifest`, `route`, `deviation`, `protocol.toml`) stays in artifacts and code, not in user prompts. Paper-, model-, or method-specific abbreviations that are non-standard for this field (PXP, FSA, RVB, AKLT, …) get a one-sentence plain-English introduction on first use; common method families (ED, DMRG, QMC, VMC, NQS) need no introduction. Other jargon, if necessary, gets defined when first used. Each message is terse — a few sentences or a compact table covering key points, no overload.
 - **Report results in ≤3 lines + a plot.** Primary quantity, verification status, one-line reasoning. Auto-generate the relevant convergence or stability plot with every calculation; this is the visual proof the result is trustworthy. Save the plot and display it. No extra user action needed.
-- **Use `AskUserQuestion` at genuine forks** — pre-action branches and post-result next-steps. Never for pre-flight ratification of clear defaults; never silently at a real fork. Both interrogating clear defaults and silently picking at real forks deny the user the steering wheel. At a real fork, think faithfully like a human: surface 2–3 options with pros / cons and the recommended one (the Superpowers brainstorming pattern in UI form). User clicks, doesn't type. Each option: short label + one-line with pro and con. Recommended option first, labeled "(Recommended)". Example:
+- **Use `AskUserQuestion` at genuine forks** — pre-action branches and post-result next-steps. At a real fork, think faithfully like a human: surface 2–3 options with pros / cons and the recommended one (the Superpowers brainstorming pattern in UI form). User clicks, doesn't type. Each option: short label + one-line with pro and con. Recommended option first, labeled "(Recommended)". Example:
   - `"Primary method (Recommended)"` — "Matches the paper's route most closely; uses the declared compute budget."
   - `"Independent check"` — "Catches setup mistakes; usually restricted to a reduced instance."
   - `"Source audit first"` — "Cheaply anchors expectations; no new computed data."

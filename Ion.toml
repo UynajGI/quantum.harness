@@ -1,12 +1,10 @@
 [options]
 skills-dir = "tools/skills"
 
-[options.targets]
-claude = ".claude/skills"
-
 [skills]
 # Research workflow
 arxiv-search = { source = "yorkeccak/scientific-skills/arxiv-search" }
+survey = { source = "QuantumBFS/sci-brain/skills/survey" }  # topic survey → .knowledge/ base (BibTeX)
 download-ref = { type = "local" }
 
 # Problem-solving primitives (generic; topic-agnostic)
@@ -16,8 +14,7 @@ cross-method-check = { type = "local" }
 slurm = { type = "local" }              # cluster mechanism (agent-does-ssh)
 setup-julia = { type = "local" }        # Julia install + mirror + project env (local or remote)
 reproduce-paper = { type = "local" }    # beginner-facing paper reproduction (brainstorm-first)
-report = { type = "local" }             # render single-page interactive HTML report from a reproduction run
-scientific-writing = { source = "davila7/claude-code-templates/scientific-writing" }
+report = { type = "local" }             # render report.json into a self-contained HTML report (stdlib only)
 
 # Skill tooling
 ion-cli = { type = "local" }

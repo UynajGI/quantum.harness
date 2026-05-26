@@ -1,56 +1,50 @@
 ---
 name: report
-description: Use when a `/reproduce-paper` run finishes and the user wants the shareable HTML deliverable — phrases like "render report", "publish reproduction", "share results".
+description: Use to render a run's HTML report — a reproduction proposal before compute, results after, or any structured run summary. Triggers include "render report", "build the report", "publish results", "share results", or a skill like `/reproduce-paper` composing its report page.
 ---
 
 # report
 
-Outcome: one self-contained HTML at `<run-dir>/report_<run-id>_<date>.html`. Every sentence traces to `sources/paper.md`, `protocol.toml`, a current-run manifest, or `run-report.md`. Compute belongs upstream to `/reproduce-paper`.
+Render one self-contained HTML page from a generic report document. `report` draws whatever pieces it is handed, in order, and knows nothing about any particular kind of run; producers (e.g. `/reproduce-paper`) own the document's shape.
 
-## Editorial
+## Outcome
 
-`editorial.json` is the polish target. It is optional for the renderer but required for a polished report. Every editorial sentence carries a `cite` resolving to `sources/paper.md`, `protocol.toml`, `run-report.md`, or a manifest.
+`python3 tools/skills/report/render_report.py <run-dir>` reads `<run-dir>/report.json` and writes `<run-dir>/report.html` — a single offline file, like a PDF: inline CSS, each figure base64-embedded, equations as inline MathML. No dependencies, no network, no build step; it opens anywhere. Surface the path, and on a laptop offer to open it.
 
-Top-level `editorial.json` keys:
+## The document
 
-- `problem.blocks[]`: `{ kind, text, cite, scope }`, with `kind` such as `background`, `open_question`, or `why_it_matters`.
-- `methodology.models[]`: `{ id, name, paper, ours }`, plus optional `equation`, `summary`, `key_facts[]`, `dimension`, and `delta_from_paper`.
-- `methodology.methods[]`: `{ id, name, paper, ours }`, plus optional `deviation`, `badge`, `headline`, and `operational[]`.
-- `methodology.params[]`: `{ name, values, scope, why }`, plus optional audience labels and math display fields.
-- `methodology.assumptions[]`: `{ text, scope, why }`, plus optional audience labels and math display fields.
-- `verdict`: `{ status, label, detail, cite, key_results[] }`, where `status` is `match`, `partial`, `fail`, or `unknown`.
-- `headline`: `{ text, cite }`.
-- `chips[]`: `{ id, label, popover, status, cite }`, where status is `ok`, `warn`, or `muted`.
-- `deviations[]`: one entry per protocol deviation, with audience label, headline, paper-vs-ours delta, and cite.
-- `figures[]`: one entry per declared figure, with paper-side and run-side captions.
+`report.json` is generic — a title plus an ordered list of sections, each an ordered list of pieces:
 
-Rendering rules:
+```json
+{ "title": "…", "eyebrow": "…", "url": "…", "lede": "…",
+  "sections": [ { "title": "…", "note": "…", "blocks": [ … ] } ] }
+```
 
-- `scope` is `null`, `model:<id>`, `method:<id>`, or another namespace declared by the protocol.
-- LaTeX uses KaTeX syntax in `tex` / `value_tex`; JSON double-escapes backslashes.
-- `unicode_fallback` carries equivalent plain Unicode for accessibility and render fallback.
-- Math in prose fields uses `$...$`; do not use ASCII fallbacks such as `Delta`, `Omega`, `<=`, or `|<E|Z2>|^2`.
-- Every `[[deviations]]` row in `protocol.toml` has a required, non-empty, audience-readable `why` field before rendering.
+It is a one-way render input, produced from whatever the real source is — for a reproduction, `/reproduce-paper` builds it from `run.json` — and never read back. Render again after it changes. There is no separate editorial, polish, or provenance file.
 
-## When
+## Pieces (`block.kind`)
 
-- `/reproduce-paper` run finished and user wants shareable HTML: `/report <run-dir> --stage append`.
-- Beginner onboard run finished and user wants the polished HTML: `/report <run-dir> --stage append`.
-- Beginner wants to preview the plan before approve: `/report <run-dir> --stage plan`.
+Each block carries a `kind` plus its own fields; unknown kinds are skipped.
 
-## Workflow
+| kind | fields | draws |
+|---|---|---|
+| `heading` | `text`, `level?` | a sub-title inside a section |
+| `text` | `text` | a paragraph (inline `$…$` math) |
+| `equation` | `tex` | a centered display formula |
+| `kv` | `pairs` (`[[k,v]…]` or object) | a label → value list; empty values drop out |
+| `table` | `columns`, `rows`, `numeric?` | a table; `numeric` is a per-column flag list for tabular, no-wrap cells |
+| `figures` | `items` (`[{src, caption}…]`) | images side by side, captioned, base64-embedded |
+| `verdict` | `status` (`good`/`warn`/`bad`), `label`, `why` | a colored badge + one-line reason |
+| `list` | `items`, `title?` | a bullet list, optionally inside a titled card |
+| `code` | `text`, `title?` | a monospaced command box |
+| `badge` | `text`, `style` (`good`/`warn`/`neutral`) | a small pill |
+| `note` | `text`, `label?`, `style?` (`info`/`pending`) | a highlighted callout (`pending` is the dashed placeholder) |
+| `card` | `blocks`, `title?` | a bordered box grouping nested pieces |
 
-1. Optionally polish: inline polish pass writes `editorial.json` from `sources/paper.md`, `protocol.toml`, `run-report.md`, and manifests. If polish is skipped, the renderer falls back to plain prose from `plan.md` and `protocol.toml`.
-2. Render: `node tools/skills/report/site/build.mjs <run-dir> --stage <stage>`.
-3. Plan stage: present HTML with **Approve and run**, **Revise**, **Stop**.
-4. Append stage: surface the final HTML path.
+Figure `src` paths are relative to `<run-dir>`; a missing file degrades to a small note rather than failing.
 
-## Failed Checks
+## Math
 
-Repair upstream evidence and rerender. Do not edit `editorial.json`, `protocol.toml`, scripts, or run report merely to satisfy a check unless the underlying evidence changed first.
+An `equation` block's `tex` is a bare LaTeX equation and renders as a centered display block; any string may carry inline math in `$…$` (or display in `$$…$$`). The bundled stdlib LaTeX→MathML converter covers the physics subset (sub/superscripts, sums and products with limits, fractions, roots, Greek, `\mathbf`/`\vec`, common operators, and `\left…\right` for grouped, sized delimiters — write moduli and bra-kets as `\left|\langle Z_2|\psi\rangle\right|^2` so the exponent sits on the whole `|…|`); unknown commands render literally.
 
-## Output
-
-- `<run-dir>/report_<run-id>_<YYYY-MM-DD>.html`
-- `<run-dir>/report_latest.html`
-- `<run-dir>/editorial.json`
+Visual reference: `docs/ed/review.html` and `docs/ed/interview.html` — same family, a little more polished.

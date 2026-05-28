@@ -8,23 +8,18 @@
 A computational quantum research harness. It helps an AI agent to run the simulation of quantum systems.
 Each method is curated by world-leading experts in that computational approach, so the guidance reflects real research practice: what to compute, which checks matter, and where common failures happen.
 
-<img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/30c5dc11-f7e8-4b15-a161-0e78ddfecfad" />
+The Harness provides:
+- **Model cards** with Hamiltonians, symmetries, etc
+- **Numeric methods and tool-usage skills** with parameters setup guidance, computational resource estimation, and verification checks.
+- **Supporting skills** for research survey, report writing, paper reproduction.
+- **Cluster support** for calculations too large for a laptop.
 
-
-## What The Harness Provides
-
-- Model and physics cards with Hamiltonians, conventions, phases, and known limits.
-- Method cards with algorithm choices, setup guidance, and verification checks.
-- Skills such as `/onboard`, `/reproduce-paper`, `/solve`, `/parameter-scan`, and `/survey`.
-- Generated scripts under `scripts/` and outputs under `results/`.
-- Cluster support for calculations too large for a laptop.
+<img alt="image" src="https://github.com/user-attachments/assets/30c5dc11-f7e8-4b15-a161-0e78ddfecfad" />
 
 
 ## Start Here
 
-If you do not yet have Claude Code, Codex CLI, or OpenCode installed, follow the
-[summer-school agent setup guide](https://giggleliu.github.io/summer-school-2026/guide#setup)
-first.
+If you do not yet have Claude Code, Codex CLI, or OpenCode installed, follow the [summer-school agent setup guide](https://giggleliu.github.io/summer-school-2026/guide#setup) first.
 
 Paste this into Claude Code, Codex, or OpenCode:
 
@@ -36,16 +31,16 @@ Then run `/track-starter` to help me understand a method by reproducing a paper.
 
 ## Numeric Methods for Quantum Systems
 
-Each method is curated by world-leading experts in that computational approach. Each method folder contains the starting point for students, including the target problem, recommended stack, and verification expectations.
+Each method is curated by world-leading experts in that computational approach.
 
-| Method | Expert contributor | Folder |
+| Method | Expert contributor | Skill |
 |---|---|---|
-| Exact diagonalization | [Chen Cheng (程晨)](https://scholar.google.com/citations?user=LZpS-T0AAAAJ) | [`tracks/ed/`](tracks/ed/) |
-| MPS / DMRG / TEBD | [Wei Li (李伟)](https://scholar.google.com/citations?user=7wiebe8AAAAJ) | [`tracks/mps/`](tracks/mps/) |
-| PEPS / CTMRG | [Hai-Jun Liao (廖海军)](https://scholar.google.com/citations?user=_8KbQtEAAAAJ) | [`tracks/peps/`](tracks/peps/) |
-| Quantum Monte Carlo | [Ming-Pu Qin (秦明普)](https://scholar.google.com/citations?user=ikqa-0IAAAAJ), [Kun Chen (陈锟)](https://scholar.google.com/citations?user=YItDGoIAAAAJ) | [`tracks/qmc/`](tracks/qmc/) |
-| VMC / neural quantum states | [Yan-Tao Wu (武琰涛)](https://scholar.google.com/citations?user=D8sgaMwAAAAJ) | [`tracks/vmc/`](tracks/vmc/) |
-| Quantum circuit simulation | [Shi-Xin Zhang (张士欣)](https://scholar.google.com/citations?user=Ut8nVqIAAAAJ), [Jin-Guo Liu (刘金国)](https://scholar.google.com/citations?user=4edw228AAAAJ) | [`tracks/qcs/`](tracks/qcs/) |
+| Exact diagonalization | [Chen Cheng (程晨)](https://scholar.google.com/citations?user=LZpS-T0AAAAJ) | `/method-ed` |
+| MPS / DMRG / TEBD | [Wei Li (李伟)](https://scholar.google.com/citations?user=7wiebe8AAAAJ) | `/method-mps` |
+| PEPS / CTMRG | [Hai-Jun Liao (廖海军)](https://scholar.google.com/citations?user=_8KbQtEAAAAJ) | `/method-peps` |
+| Quantum Monte Carlo | [Ming-Pu Qin (秦明普)](https://scholar.google.com/citations?user=ikqa-0IAAAAJ), [Kun Chen (陈锟)](https://scholar.google.com/citations?user=YItDGoIAAAAJ) | `/method-qmc` |
+| VMC / neural quantum states | [Yan-Tao Wu (武琰涛)](https://scholar.google.com/citations?user=D8sgaMwAAAAJ) | `/method-vmc` |
+| Quantum circuit simulation | [Shi-Xin Zhang (张士欣)](https://scholar.google.com/citations?user=Ut8nVqIAAAAJ), [Jin-Guo Liu (刘金国)](https://scholar.google.com/citations?user=4edw228AAAAJ) | `/method-qcs` |
 
 ## Example Prompts
 

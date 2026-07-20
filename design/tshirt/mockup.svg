@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1400" width="1200" height="1400">
+  <rect width="1200" height="1400" fill="#333338"/>
+
+  <!-- tee body -->
+  <path d="M 480,140 L 355,168 L 185,345 L 350,430 L 385,392
+           L 385,1105 Q 600,1128 815,1105 L 815,392 L 850,430 L 1015,345 L 845,168 L 720,140
+           Q 600,198 480,140 Z"
+        fill="#101010" stroke="#3d3d42" stroke-width="2"/>
+  <!-- collar -->
+  <path d="M 480,140 Q 600,198 720,140" fill="none" stroke="#2c2c30" stroke-width="7"/>
+  <path d="M 490,155 Q 600,208 710,155" fill="none" stroke="#232327" stroke-width="3"/>
+  <!-- sleeve seam hints -->
+  <path d="M 385,392 L 350,430" stroke="#26262a" stroke-width="2.5" fill="none"/>
+  <path d="M 815,392 L 850,430" stroke="#26262a" stroke-width="2.5" fill="none"/>
+
+  <!-- printed artwork, scaled onto chest -->
+  <g transform="translate(372,275) scale(0.38)">
+    <image href="tshirt_transparent.png" x="0" y="0" width="1200" height="1160"/>
+  </g>
+</svg>

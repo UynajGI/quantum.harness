@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 980" width="1500" height="980">
+  <rect width="1500" height="980" fill="#000000"/>
+
+  <defs>
+    <!-- ape, slightly dimmed for the classical row -->
+    <g id="chimp2">
+      <path d="M 18,-94 L 26,-50 L 32,-4" stroke="#7d7d7d" stroke-width="14" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M -28,-90 L -38,-48 L -30,-4" stroke="#7d7d7d" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M -20,-92 L 26,-96" stroke="#c9c9c9" stroke-width="26" fill="none" stroke-linecap="round"/>
+      <path d="M 26,-96 L 40,-52 L 50,-4" stroke="#c9c9c9" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M -20,-92 L -6,-50 L 0,-4" stroke="#c9c9c9" stroke-width="16" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="56" cy="-95" r="18" fill="#c9c9c9"/>
+      <circle cx="69" cy="-89" r="8" fill="#c9c9c9"/>
+    </g>
+    <!-- upright human with staff, bright -->
+    <g id="human_staff">
+      <path d="M 0,-166 L -14,-136 L -22,-108" stroke="#9a9a9a" stroke-width="12" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M -2,-106 L -18,-58 L -32,-3" stroke="#9a9a9a" stroke-width="14" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 0,-106 L 3,-170" stroke="#ffffff" stroke-width="23" fill="none" stroke-linecap="round"/>
+      <path d="M 3,-168 L 20,-140 L 30,-112" stroke="#ffffff" stroke-width="13" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 0,-106 L 22,-60 L 36,-3" stroke="#ffffff" stroke-width="15" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="6" cy="-198" r="17" fill="#ffffff"/>
+      <path d="M 34,-190 L 40,-2" stroke="#ffffff" stroke-width="7" stroke-linecap="round" fill="none"/>
+    </g>
+    <!-- keycap: back layer, front face, top highlight -->
+    <g id="tabkey">
+      <rect x="12" y="-14" width="170" height="140" rx="20" fill="none" stroke="#6b6b6b" stroke-width="5"/>
+      <rect x="0" y="0" width="170" height="140" rx="20" fill="#0a0a0a" stroke="#c9c9c9" stroke-width="5"/>
+      <path d="M 14,14 H 156" stroke="#3d3d3d" stroke-width="3" fill="none" stroke-linecap="round"/>
+      <text x="85" y="84" text-anchor="middle" font-family="Menlo, Courier New, monospace" font-size="42" fill="#c9c9c9">TAB</text>
+    </g>
+  </defs>
+
+  <!-- ============ ROW 1: CLASSICAL (dimmed) ============ -->
+  <text x="60" y="100" font-family="Menlo, Courier New, monospace" font-size="48" fill="#8a8a8a">Classical Scientific Computing</text>
+
+  <use href="#chimp2" transform="translate(300,350) scale(1.05)"/>
+  <use href="#tabkey" transform="translate(560,215)"/>
+  <use href="#tabkey" transform="translate(810,215)"/>
+  <use href="#tabkey" transform="translate(1060,215)"/>
+
+  <!-- row divider -->
+  <path d="M 60,470 H 1440" stroke="#262626" stroke-width="2"/>
+
+  <!-- ============ ROW 2: MODERN (bright) ============ -->
+  <text x="60" y="570" font-family="Menlo, Courier New, monospace" font-size="48" fill="#ffffff">Modern Scientific Computing (with skills)</text>
+
+  <use href="#human_staff" transform="translate(300,905) scale(1.05)"/>
+
+  <!-- terminal panel -->
+  <g font-family="Menlo, Courier New, monospace">
+    <rect x="540" y="650" width="640" height="250" rx="14" fill="#0d1117" stroke="#2a2f36" stroke-width="1.5"/>
+    <circle cx="572" cy="682" r="6" fill="#3a3a3a"/>
+    <circle cx="592" cy="682" r="6" fill="#3a3a3a"/>
+    <circle cx="612" cy="682" r="6" fill="#3a3a3a"/>
+    <text x="570" y="748" font-size="32" fill="#8b949e">$ agent requests permission:</text>
+    <text x="582" y="816" font-size="42" font-weight="bold" fill="#D97757">❯ 1. YOLO</text>
+    <text x="582" y="866" font-size="28" fill="#5a6169"># the only mode</text>
+  </g>
+
+  <!-- spark -->
+  <path d="M 1260,690 l 7,18 l 18,7 l -18,7 l -7,18 l -7,-18 l -18,-7 l 18,-7 Z" fill="#e8e8e8"/>
+
+  <!-- real Claude starburst (injected) -->
+  <!-- REAL:CLAUDE2 begin -->
+  <!-- REAL:CLAUDE2 end -->
+</svg>

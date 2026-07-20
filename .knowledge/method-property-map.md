@@ -12,7 +12,7 @@ The link between numerical methods and the model properties defined in
 
 Methods (harness skills): **ED** · **MPS** (DMRG/TEBD/TDVP) · **PEPS** (2D TN) ·
 **QMC** (SSE / AFQMC-DQMC) · **VMC**/NQS · **MF**/HF · **LTRG** (finite-T TN) ·
-**MCRG** (critical exponents) · **QCS** (circuit sim) · **PolyOpt** (certified
+**QCS** (circuit sim) · **PolyOpt** (certified
 bounds, NCTSSOS).
 
 ---
@@ -79,14 +79,6 @@ bounds, NCTSSOS).
   `T` (Trotter + truncation error accumulate; XTRG variant improves).
 - **Cost lever:** Trotter step `τ` (error `∼ τ²`); retained SVD dimension `Dc`.
 
-### MCRG — Monte Carlo renormalization group (`method-mcrg`)
-- **Applicable when:** extracting **critical exponents** near a fixed point
-  (B6 criticality); classical lattice spin models; any A1 dimension; large
-  lattices near `T_c`.
-- **Blocked / expensive by:** ground-state energies / non-critical observables;
-  thermodynamic-limit observables (gives fixed-point exponents, not them).
-- **Cost lever:** lattice size `L`; block-spin rule; operator basis size.
-
 ### QCS — quantum circuit simulation (`method-qcs`)
 - **Applicable when:** parameterized circuits / VQE; differentiable circuit
   optimization; circuit-contraction benchmarking. Classical simulation only.
@@ -140,7 +132,7 @@ bounds, NCTSSOS).
 
 ### B6 Spectral gap
 - gapped → cheap for MPS/PEPS (constant `χ`).
-- gapless / critical → inflates `χ`, slows convergence; **MCRG** for exponents.
+- gapless / critical → inflates `χ`, slows convergence.
 
 ### B7 Order type
 - SSB → measure order parameter (any method).
@@ -199,7 +191,6 @@ bounds, NCTSSOS).
 | VMC/NQS | any          | large                     | GS (+dynamics)                 | variational / ansatz bias             |
 | MF/HF   | any          | unlimited                 | baseline                       | neglects correlation & fluctuations   |
 | LTRG    | 1D/2D        | large                     | finite-T thermodynamics        | ground state / 3D                     |
-| MCRG    | any (class.) | large near `T_c`          | critical exponents             | non-critical / GS                     |
 | QCS     | —            | `n` qubits (`2^n` memory) | variational circuits / VQE     | state-vector memory                   |
 | PolyOpt | 1D/2D        | ~100 (1D) / 10×10 (2D)    | certified GS bounds            | 3D / SDP blow-up                      |
 | DMFT*   | high / ∞-D   | infinite (local)          | finite-T, Mott, dynamics       | neglects spatial correlations         |

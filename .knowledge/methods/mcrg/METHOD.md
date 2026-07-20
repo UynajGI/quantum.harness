@@ -82,7 +82,7 @@ Rendered: `../../literature/monte-carlo-renormalization-group/10-1103-physreve-7
 
 ## How it is used / Operational
 
-**Owning skill:** `/method-mcrg` (the dedicated MCRG harness skill). See that skill for the full workflow, operator-basis construction, and eigenvalue extraction routines.
+**Owning skill:** none — MCRG is a reference method outside the core harness (no dedicated `/method-*` skill). The workflow below (operator-basis construction, eigenvalue extraction) is self-contained.
 
 **Default workflow:**
 1. Generate equilibrium configurations at `T ≈ T_c` using cluster MC (Swendsen–Wang or Wolff) to minimize critical slowing down; collect `N_s ≥ 10³` independent configurations at lattice size `L`.

@@ -31,7 +31,7 @@ no internal convergence parameter; **(stoch)** = carries statistical error bars.
 |---|---|---|---|---|
 | Metropolis Monte Carlo | `metropolis-mc` | exact (stoch) | classical MC (no dedicated skill) | [@sandvik_2010_computational] |
 | Cluster MC / Wang–Landau / parallel tempering | `cluster-mc` | exact (stoch) | classical MC (no dedicated skill) | [@wolff_1989_collective] |
-| Monte Carlo renormalization group | `mcrg` | controlled (stoch) | `/method-mcrg` | [@wu_2017_variational] |
+| Monte Carlo renormalization group | `mcrg` | controlled (stoch) | outside core harness | [@wu_2017_variational] |
 
 ## 3. Ground-state tensor networks
 | Method | Card | Accuracy | Owning skill | Key ref |

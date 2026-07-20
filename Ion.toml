@@ -50,7 +50,6 @@ method-peps = { type = "local" }
 method-qmc = { type = "local" }
 method-dfpt = { type = "local" }         # DFPT electron-phonon superconductivity (native PHonon route)
 method-ltrg = { type = "local" }
-method-mcrg = { type = "local" }
 method-vmc = { type = "local" }
 method-qcs = { type = "local" }
 method-mf = { type = "local" }

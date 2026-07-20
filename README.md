@@ -25,7 +25,7 @@ Paste this into Claude Code, Codex, or OpenCode:
 ```text
 Clone https://github.com/QuantumBFS/quantum.harness.
 Run `make skills` to install the harness skills.
-Then run `/beginner-training` to start the guided training — pick a track and it walks you through, one confirmed step at a time.
+Then run `/beginner-training` skill to start the guided training.
 ```
 
 ## Numeric Methods for Quantum Systems
